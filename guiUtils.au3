@@ -681,8 +681,12 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	; show GUI if WS_VISIBLE is set
 	If BitAND(_objGet($oJSON, "style", 0), $WS_VISIBLE) Then GUISetState(@SW_SHOW, $hGUI)
 
-	; set focus
-	If _objExists($oJSON, "focus") Then ControlFocus($hGUI, "", _objGet($oControls, _objGet($oJSON, "focus")))
+	; store/set initial focused control name
+	; used by _GUIUtils_InputDialog
+	If _objExists($oJSON, "focus") Then
+		ControlFocus($hGUI, "", _objGet($oControls, _objGet($oJSON, "focus")))
+		_objSet($oForm, "initialFocus", _objGet($oJSON, "focus"))
+	EndIf
 
 	; return
 	Return $oForm
@@ -760,6 +764,8 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 		EndIf
 	EndIf
 
+	If UBound($aInputCtrlNames) <= 0 Then Return SetError(1, 0, Null) ; impossible to make an InputDialog without input controls
+
 	; check submitBtn
 	Local $sSubmitBtnName = _objGet($oForm, "submitBtn", Null)
 	If $sSubmitBtnName = Null Then
@@ -795,13 +801,9 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 		For $i = 0 To UBound($aInputCtrlNames) - 1
 			__guiUtils_inputDialog_controlSet( _
 				$oForm, $aInputCtrlNames[$i], _
-				_objGet($oInitialData, $aInputCtrlNames[$i], ""), _
+				_objGet($oInitialData, $aInputCtrlNames[$i], Null), _
 				_objGet($oInitialData, $aInputCtrlNames[$i] & ":options", Null) _
 			)
-		Next
-	Else
-		For $i = 0 To UBound($aInputCtrlNames) - 1
-			__guiUtils_inputDialog_controlSet($oForm, $aInputCtrlNames[$i], Null, Null)
 		Next
 	EndIf
 
@@ -810,8 +812,17 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 	GUISetState(@SW_SHOW, _GUIUtils_HWnd($oForm))
 	WinActivate(_GUIUtils_HWnd($oForm))
 
-	; save currently focused control (to restore focus to it after return)
-	Local $focusCtrl = ControlGetFocus(_GUIUtils_HWnd($oForm))
+	Local $focusCtrl = Null
+	If _objGet($oForm, "initialFocus") Then
+		; reset focus to "initialFocus" if it exists
+		ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, _objGet($oForm, "initialFocus", $aInputCtrlNames[0])))
+	Else
+		; or just save currently focused control (to restore focus to it after return)
+		$focusCtrl = ControlGetFocus(_GUIUtils_HWnd($oForm))
+	EndIf
+
+	; set close on Escape
+	$iOldCloseOnEscValue = Opt("GUICloseOnEsc", 1)
 
 	; enter main loop
 	Local $aMsg, $oRead = _objCreate()
@@ -866,11 +877,20 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 ;~ 	_objDel($oForm, "###___onChangeDummy")
 
 	; restore initialy focused control
-	ControlFocus(_GUIUtils_HWnd($oForm), "", $focusCtrl)
+	If $focusCtrl <> Null Then ControlFocus(_GUIUtils_HWnd($oForm), "", $focusCtrl)
 
-	; hide gui and return
+	; restore close on Escape value
+	Opt("GUICloseOnEsc", $iOldCloseOnEscValue)
+
+	; hide GUI
 	GUISetState(@SW_HIDE, _GUIUtils_HWnd($oForm))
 	$__gGuiUtils_inputDialog_oCurrentForm = Null
+
+	; reset input values
+	For $i = 0 To UBound($aInputCtrlNames) - 1
+		__guiUtils_inputDialog_controlSet($oForm, $aInputCtrlNames[$i], Null, Null)
+	Next
+
 	Return $oRead
 EndFunc
 
@@ -2084,7 +2104,7 @@ EndFunc
 
 Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOptions = Null)
 	Switch __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
-		Case "Edit"
+		Case "Edit", "Input"
 			GUICtrlSetData(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData <> Null ? $vData : "")
 		Case "Checkbox", "Radio"
 			GUICtrlSetState(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData ? $GUI_CHECKED : $GUI_UNCHECKED)
@@ -2140,7 +2160,8 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 
 					_SendMessage(_GUIUtils_HCtrl($oForm, $sCtrlName), $LB_SETSEL, False, -1) ; deselect all
 					For $i = 0 To UBound($vData) - 1
-						_SendMessage(_GUIUtils_HCtrl($oForm, $sCtrlName), $LB_SETSEL, True, _GUICtrlListBox_FindString(_GUIUtils_HCtrl($oForm, $sCtrlName), $vData[$i], True))
+						$iFind = _GUICtrlListBox_FindString(_GUIUtils_HCtrl($oForm, $sCtrlName), $vData[$i], True)
+						If $iFind >= 0 Then _SendMessage(_GUIUtils_HCtrl($oForm, $sCtrlName), $LB_SETSEL, True, $iFind)
 					Next
 				Else
 					_GUICtrlListBox_SetCurSel(_GUIUtils_HCtrl($oForm, $sCtrlName), _GUICtrlListBox_FindString(_GUIUtils_HCtrl($oForm, $sCtrlName), $vData, True))
