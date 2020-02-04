@@ -1,0 +1,204 @@
+About fonts:
+------------
+To define a font, you can either use and array of four elements [size,weight,style,face],
+or a string of these four elements, separated by commas ("size,weight,style,face")
+Ex: [10, 400, 0, "Consolas"] or "10,400,0,Consolas"
+
+JSON Form Definition {
+    // Dialog configuration
+    title: Window title (default: @ScriptName)
+    font: GUISetFont (default: do nothing)
+
+    labelsMaxWidth: max width of labels column (default: 300)
+    inputsWidth: width of inputs column (default: 300)
+    maxHeight: maximum GUI height. more inputs will be placed in a new column (default: @DesktopHeight * 2 / 3)
+    margin: default vertical and horizontal margins between controls and dialog borders (default: 8)
+    inputLabelVerticalPadding: vertical bias of the inputLabel according to it's control (default: 3)
+
+    style: GUI style (default: $GUI_SS_DEFAULT_GUI)
+    exStyle: GUI extended style (default: $WS_EX_TOOLWINDOW)
+    bkColor: GUISetBKColor (default: do nothing)
+
+    defColor: GUICtrlSetDefColor (default: do nothing)
+    defBkColor: GUICtrlSetDefBkColor (default: do nothing)
+
+	focus: ctrlName
+
+    header: { // optional: if set, will add a label with centered text above all other controls, and a separator
+        text
+        font, style (default: SS_CENTER), exStyle, color, bkColor
+        tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+    }
+    // you can directly set header: "header text"
+
+    submitBtn: { // if not set, defaults will be used
+        text: "OK"
+        width: 100, height: 25
+        font, style, exStyle, color, bkColor
+        tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+    }
+    // you can directly set submitBtn: "Button Text"
+
+    cancelBtn: { // if not set, defaults will be used
+        text: "Cancel"
+        width: 80, height: 25
+        font, style, exStyle, color, bkColor
+        tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+    }
+    // you can directly set submitBtn: "Button Text"
+
+
+    // input controls defintion
+    - `type` is the only mendatory field for a control definition object
+    - `id` must be unique. If not provided, it will be StringFormat("%s_%02d", type, i)
+
+    controls: [
+        // horizontal line (GUICtrlCreateLabel with 1px height and $SS_BLACKRECT)
+        {
+            type: "separator"
+            id:   "control name" (must be unique)
+        }
+
+        // simple text label
+        {
+            type: "label"
+            id:   "control name" (must be unique)
+            text: "label text"
+
+            style, exStyle
+            font, color, bkColor
+
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+        }
+
+        // standard inputs
+        - standard inputs have a text label on their left side
+        to define label text, use `label` property (if not set, it will be _StringTitleCase(`id`))
+        you can change label font, style, exStyle, color and bkColor
+        - you can set default value and options for standard controls
+        - input and combobox support placeholder text (CueBanner)
+        {
+            type: "input"
+            id:   "control name" (must be unique)
+
+            label: "label text"
+            labelStyle, labelExStyle, labelFont, labelColor, labelBkColor
+
+            font (default GUI font), style, exStyle, color, bkColor
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+
+            value: "current input value"
+            placeholder: "placeholder text when input is empty (cue banner)"
+        }
+        {
+            type: "password"
+
+            everything is the same as "input", but $ES_PASSWORD is added to style
+        }
+        {
+            type: "edit" / "text"
+            id:   "control name" (must be unique)
+
+            label: "label text"
+            labelStyle, labelExStyle, labelFont, labelColor, labelBkColor
+
+            font (default GUI font), style, exStyle, color, bkColor
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+
+            lines: height of the edit box (in number of lines) (default: 3)
+            value: "current edit text"
+        }
+        {
+            type: "combo" / "combobox"
+            id:   "control name" (must be unique)
+
+            label: "label text"
+            labelStyle, labelExStyle, labelFont, labelColor, labelBkColor
+
+            font (default GUI font), style, exStyle, color, bkColor
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+
+            editable: if true (default), $CBS_DROPDOWN style is set (if not already)
+            if false, $CBS_DROPDOWNLIST style is set (if not already)
+
+            options: ["value 01", "value 02", ...] OR "value 01|value 02|..." (| or Opt("GUIDataSeparatorChar"))
+            value: string: current selected value if it exists, or combo edit value
+				   integer: current selected value index (0-based)
+
+            placeholder: "placeholder text when combo edit is empty (cue banner)"
+        }
+        {
+            type: "list" / "listbox"
+            id:   "control name" (must be unique)
+
+            label: "label text"
+            labelStyle, labelExStyle, labelFont, labelColor, labelBkColor
+
+            font (default GUI font), style (default: $WS_BORDER,$WS_VSCROLL,$LBS_MULTIPLESEL,$LBS_NOINTEGRALHEIGHT), exStyle, color, bkColor
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+
+            multisel: if true (default), $LBS_MULTISEL style is set (if not already)
+            if false, $LBS_MULTISEL style is unset (if not already)
+
+            options: ["line 01", "line 02", ...] OR "line 01|line 02|..." (| or Opt("GUIDataSeparatorChar"))
+            value: array of strings: ["selected 01", "selected 02", ...] OR "selected 01|selected 02|..."
+				   array of integers: selected values indexes (0-based)
+        }
+        {
+            type: "date" / "datepick" / "datepicker"
+            id:   "control name" (must be unique)
+
+            label: "label text"
+            labelStyle, labelExStyle, labelFont, labelColor, labelBkColor
+
+            font (default GUI font), style (default: $DTS_SHORTDATEFORMAT), exStyle, color, bkColor
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+
+            value: current selected date (always YYYY/MM/DD) (default: current date)
+        }
+        {
+            type: "time" / "timepick" / "timepicker"
+            id:   "control name" (must be unique)
+
+            label: "label text"
+            labelStyle, labelExStyle, labelFont, labelColor, labelBkColor
+
+            font (default GUI font), style (default: $DTS_TIMEFORMAT), exStyle, color, bkColor
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+
+            value: current selected time (always HH:MM:SS) (default: current time)
+        }
+
+        // checkboxes
+        - for check/radio boxes, the label is on the right size of the control. There is no label(Style/ExStyle/Font/Color/BkColor),
+        you can set label style using directly style, exStyle, font, color and bkColor values
+        - by default, there is no vertical margin between check/radio boxes, you can force vertical margin by specifying space:true
+          (usefull to make groups of radio/check boxes)
+        - to start a new radioboxes group, specify group:true on the first radiobox of a group
+        {
+            type: "check" / "checkbox"
+            id:   "control name" (must be unique)
+
+            label: "label text"
+            font, style, exStyle, font, color, bkColor
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+
+            value: boolean
+
+            space: if set to true, vertical margin is added after control (default: false)
+        }
+        {
+            type: "radio" / "radiobox"
+            id:   "control name" (must be unique)
+
+            label: "label text"
+            font, style, exStyle, font, color, bkColor
+			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
+
+            value: boolean
+
+            space: if set to true, vertical margin is added after control (default: false)
+            group: if set to true, $WS_GROUP style is added to control (default: false)
+        }
+    ]
+}
