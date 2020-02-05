@@ -728,12 +728,12 @@ EndFunc
 ;                    Data format:
 ;                      - input, edit: text content
 ;                      - checkbox, radiobox: boolean (checked/unchecked)
-;                      - listbox, combobox: Opt("GUIDataSeparatorChar") separated items list or array of items (0-based or
-;                        1-based, both are supported)
-;                        to select an item in combobox: add an item in $oInitialData object named "controlName:default"
-;                        to select item(s) in listbox: add an item in $oInitialData object named "controlName:default" with value
-;                            either an Opt("GUIDataSeparatorChar") separated list of items, or an array (0-based or 1-based)
 ;                      - date, time: date or time, always in in _NowCalc format (not local format)
+;                      - listbox: array (0- or 1-based) or Opt("GUIDataSeparatorChar") separated string of selected item(s)
+;                      - combobox: selected item (if found), or Edit content if $CBS_DROPDOWN (editable)
+;                        you can modifiy options of listbox and combobox by specifying "controlName:options" (array or string)
+;                    Initial focused control:
+;                      You can set the initially focused input control by specifying "controlName:focus" = True
 ;                  - About callback functions:
 ;                    This function accepts 2 callback functions, none of them is mendatory.
 ;                    All of them takes 3 parameters: $oForm, $vData, $vUserData. $oForm and $vUserData dont need further
@@ -797,6 +797,7 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 	If Not _objExists($oForm, "###___onChangeDummy") Then _objSet($oForm, "###___onChangeDummy", GUICtrlCreateDummy())
 
 	; set controls initial data if provided
+	Local $sInitialFocus = ""
 	If IsObj($oInitialData) Then
 		For $i = 0 To UBound($aInputCtrlNames) - 1
 			__guiUtils_inputDialog_controlSet( _
@@ -804,6 +805,7 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 				_objGet($oInitialData, $aInputCtrlNames[$i], Null), _
 				_objGet($oInitialData, $aInputCtrlNames[$i] & ":options", Null) _
 			)
+			If _objGet($oInitialData, $aInputCtrlNames[$i] & ":focus", False) Then $sInitialFocus = $aInputCtrlNames[$i]
 		Next
 	EndIf
 
@@ -812,13 +814,16 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 	GUISetState(@SW_SHOW, _GUIUtils_HWnd($oForm))
 	WinActivate(_GUIUtils_HWnd($oForm))
 
-	Local $focusCtrl = Null
-	If _objGet($oForm, "initialFocus") Then
-		; reset focus to "initialFocus" if it exists
-		ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, _objGet($oForm, "initialFocus", $aInputCtrlNames[0])))
+	; always save initially focused control, and restore it after
+	Local $focusCtrl = ControlGetFocus(_GUIUtils_HWnd($oForm))
+
+	; then, set focus
+	If $sInitialFocus Then
+		; either to the control provided in $oInitialData
+		ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, $sInitialFocus))
 	Else
-		; or just save currently focused control (to restore focus to it after return)
-		$focusCtrl = ControlGetFocus(_GUIUtils_HWnd($oForm))
+		; or to the focused control when the Form was created, or lastly, to the first input control
+		ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, _objGet($oForm, "initialFocus", $aInputCtrlNames[0])))
 	EndIf
 
 	; set close on Escape
