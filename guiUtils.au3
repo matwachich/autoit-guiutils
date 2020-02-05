@@ -2092,15 +2092,13 @@ Func __guiUtils_inputDialog_controlGet($oForm, $sCtrlName)
 			Return GUICtrlRead(_GUIUtils_CtrlID($oForm, $sCtrlName)) = $GUI_CHECKED
 		Case "Date"
 			Local $aDateTime = _GUICtrlDTP_GetSystemTime(_GUIUtils_HCtrl($oForm, $sCtrlName))
-			Return StringFormat("%04d/%02d/%02d", $aDateTime[0], $aDateTime[1], $aDateTime[2])
+			Return @error ? Null : StringFormat("%04d/%02d/%02d", $aDateTime[0], $aDateTime[1], $aDateTime[2])
 		Case "Time"
 			Local $aDateTime = _GUICtrlDTP_GetSystemTime(_GUIUtils_HCtrl($oForm, $sCtrlName))
-			Return StringFormat("%02d:%02d:%02d", $aDateTime[3], $aDateTime[4], $aDateTime[5])
+			Return @error ? Null : StringFormat("%02d:%02d:%02d", $aDateTime[3], $aDateTime[4], $aDateTime[5])
 	EndSwitch
 	Return ""
 EndFunc
-
-#... START DBUG
 
 Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOptions = Null)
 	Switch __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
@@ -2176,26 +2174,28 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 				EndIf
 			EndIf
 		Case "Date"
-			If $vData <> Null Then
+			Local $tST
+			If $vData Then
 				Local $aDate, $aTime
 				_DateTimeSplit($vData, $aDate, $aTime)
-				Local $aDateTime[] = [0, $aDate[1], $aDate[2], $aDate[3], $aTime[1], $aTime[2], $aTime[3]]
+				$tST = _Date_Time_EncodeSystemTime($aDate[2], $aDate[1], $aDate[3], $aTime[1], $aTime[2], $aTime[3])
 			Else
-				Local $aDateTime[] = [0, @YEAR, @MON, @MDAY, @HOUR, @MIN, @SEC]
+				$tST = _Date_Time_GetSystemTime()
 			EndIf
-			_GUICtrlDTP_SetSystemTime(_GUIUtils_HCtrl($oForm, $sCtrlName), $aDateTime)
+			_GUICtrlDTP_SetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName), $tST, $vData = Null)
 		Case "Time"
-			If $vData <> Null Then
+			Local $tST
+			If $vData Then
 				Local $aTime = StringSplit($vData, ":")
 				While UBound($aTime) < 4
 					_ArrayAdd($aTime, 0)
 					$aTime[0] += 1
 				WEnd
-				Local $aDateTime[] = [0, @YEAR, @MON, @MDAY, $aTime[1], $aTime[2], $aTime[3]]
+				$tST = _Date_Time_EncodeSystemTime(@MON, @MDAY, @YEAR, $aTime[1], $aTime[2], $aTime[3])
 			Else
-				Local $aDateTime[] = [0, @YEAR, @MON, @MDAY, @HOUR, @MIN, @SEC]
+				$tST = _Date_Time_GetSystemTime()
 			EndIf
-			_GUICtrlDTP_SetSystemTime(_GUIUtils_HCtrl($oForm, $sCtrlName), $aDateTime)
+			_GUICtrlDTP_SetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName), $tST, $vData = Null)
 	EndSwitch
 EndFunc
 
