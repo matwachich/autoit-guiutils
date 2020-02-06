@@ -35,6 +35,7 @@
 #include "Object.au3"
 #include "StringSize.au3"
 
+;~ #include <WinAPIDiag.au3>
 ;~ #include <WMDebug.au3>
 ;~ #include <_Dbug.au3>
 
@@ -1183,11 +1184,12 @@ EndFunc
 ; Description ...: Read the data of all input controls of a form.
 ; Syntax ........: _GUIUtils_ReadInputs($oForm)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
-; Return values .: Object {controlName: controlData, ...}
+;                  $sCtrlName           - [optional] control name to read. Default read all input controls and return object
+; Return values .: Object {controlName: controlData, ...} OR single control data (string, boolean or array)
 ; Author ........: matwachich
 ; Remarks .......: Input controls are: Inputs, Edits, Combo, List, Checkbox, Radiobox and DateTimePicker.
 ; ===============================================================================================================================
-Func _GUIUtils_ReadInputs($oForm)
+Func _GUIUtils_ReadInputs($oForm, $sCtrlName = "")
 	Local $oRet = _objCreate()
 
 	Local $aInputs = _objGet($oForm, "inputs", Null)
@@ -1196,10 +1198,14 @@ Func _GUIUtils_ReadInputs($oForm)
 		_objSet($oForm, "inputs", $aInputs)
 	EndIf
 
-	For $i = 0 To UBound($aInputs) - 1
-		_objSet($oRet, $aInputs[$i], __guiUtils_inputDialog_controlGet($oForm, $aInputs[$i]))
-	Next
-	Return $oRet
+	If $sCtrlName Then
+		Return __guiUtils_inputDialog_controlGet($oForm, $sCtrlName)
+	Else
+		For $i = 0 To UBound($aInputs) - 1
+			_objSet($oRet, $aInputs[$i], __guiUtils_inputDialog_controlGet($oForm, $aInputs[$i]))
+		Next
+		Return $oRet
+	EndIf
 EndFunc
 
 # ===============================================================================================================================
@@ -2183,7 +2189,7 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 			If $vData Then
 				Local $aDate, $aTime
 				_DateTimeSplit($vData, $aDate, $aTime)
-				$tST = _Date_Time_EncodeSystemTime($aDate[2], $aDate[1], $aDate[3], $aTime[1], $aTime[2], $aTime[3])
+				$tST = _Date_Time_EncodeSystemTime($aDate[2], $aDate[3], $aDate[1])
 			Else
 				$tST = _Date_Time_GetSystemTime()
 			EndIf
