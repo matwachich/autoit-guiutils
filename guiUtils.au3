@@ -74,8 +74,10 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode('{title:"Input
 ; _GUIUtils_UserDataDel
 ; _GUIUtils_UserDataEmpty
 ; _GUIUtils_SetInputs
+; _GUIUtils_GetInputs
 ; _GUIUtils_SetButtons
 ; _GUIUtils_ReadInputs
+; _GUIUtils_WriteInputs
 ; ===============================================================================================================================
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
@@ -712,30 +714,33 @@ EndFunc
 ;                  $fnValidation        - [optional] function called when user press dialog's OK button. Default is Null.
 ;                  $fnOnChange          - [optional] function called when the data of some input is changed. Default is Null.
 ;                  $vUserData           - [optional] user data that is passed to callback functions. Default is Null.
-; Return values .: Object containing inputs data. ({inputName: inputData, ...})
+; Return values .: Object containing inputs data ({inputName: inputData, ...})
+;                  Or Null and @error = 1 if dialog canceled
 ; Author ........: matwachich
-; Remarks .......: - About inputs:
+; Remarks .......:
+;                  - About inputs:
+;                    -------------
 ;                    by default, all supported inputs will be writen/read by the function. Supported inputs are:
 ;                    input, edit, combobox, listbox, checkbox, radio, dateTimePicker.
-;                    Or, if you want to ignore some controls (read only inputs for example), you can specify them by using
+;                    Or, if you want to write/read only a subset of input controls, you can specify them by using
 ;                    _GUIUtils_SetInputs($oForm, inputControlNames)
+;
 ;                  - About validation and cancelling buttons:
+;                    ----------------------------------------
 ;                    by default, if the GUI contains a DEFPUSHBUTTON it will be used as validation button.
 ;                    If it doesn't contain any DEFBUSHBUTTON, you MUST define the validation button you want to use by calling
 ;                    _GUIUtils_SetButtons().
 ;                    You can also use _GUIUtils_SetButtons() to define a cancel button control, but it is not mandatory.
+;
 ;                  - About initial dialog data:
-;                    You can set initial data for input controls by passing $oInitialData an object: {controlName: data...}
-;                    Data format:
-;                      - input, edit: text content
-;                      - checkbox, radiobox: boolean (checked/unchecked)
-;                      - date, time: date or time, always in in _NowCalc format (not local format)
-;                      - listbox: array (0- or 1-based) or Opt("GUIDataSeparatorChar") separated string of selected item(s)
-;                      - combobox: selected item (if found), or Edit content if $CBS_DROPDOWN (editable)
-;                        you can modifiy options of listbox and combobox by specifying "controlName:options" (array or string)
-;                    Initial focused control:
-;                      You can set the initially focused input control by specifying "controlName:focus" = True
+;                    --------------------------
+;                    You can set initial data for input controls by passing $oInitialData an object: {controlName: data...}.
+;                    See _GUIUtils_WriteItems remarks about data format of each control type.
+;                  - You can also set the initially focused input control by specifying "controlName:focus" = True in then
+;                    initial data object.
+;
 ;                  - About callback functions:
+;                    -------------------------
 ;                    This function accepts 2 callback functions, none of them is mendatory.
 ;                    All of them takes 3 parameters: $oForm, $vData, $vUserData. $oForm and $vUserData dont need further
 ;                    explanations. $vData is different for each callback.
@@ -797,7 +802,7 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 	GUISwitch(_GUIUtils_HWnd($oForm))
 	If Not _objExists($oForm, "###___onChangeDummy") Then _objSet($oForm, "###___onChangeDummy", GUICtrlCreateDummy())
 
-	; set controls initial data if provided
+	; set controls initial data if provided (don't use _GUIUtils_WriteInputs because it doesn't support focus control)
 	Local $sInitialFocus = ""
 	If IsObj($oInitialData) Then
 		For $i = 0 To UBound($aInputCtrlNames) - 1
@@ -910,7 +915,7 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_SetAccels
-; Description ...: Set accelerators
+; Description ...: Set accelerators.
 ; Syntax ........: _GUIUtils_SetAccels($oForm, $vAccels)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA).
 ;                  $vAccels             - Either an array (similar format as GUISetAccelerators), or a boolean (see remarks).
@@ -938,7 +943,7 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_HWnd
-; Description ...: Get GUI's HWnd
+; Description ...: Get GUI's HWnd.
 ; Syntax ........: _GUIUtils_HWnd($oForm)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA).
 ; Return values .: HWnd
@@ -950,7 +955,7 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_FormName
-; Description ...: Get Form name (as defined in KODA, or winTitle for JSON dialogs)
+; Description ...: Get Form name (as defined in KODA, or winTitle for JSON dialogs).
 ; Syntax ........: _GUIUtils_FormName($oForm)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA).
 ; Return values .: Form name
@@ -962,7 +967,7 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_CtrlID
-; Description ...: Get control ID by name
+; Description ...: Get control ID by name.
 ; Syntax ........: _GUIUtils_CtrlID($oForm, $sCtrlName)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
 ;                  $sCtrlName           - control name.
@@ -977,7 +982,7 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_CtrlNameByID
-; Description ...: Find control name by ID
+; Description ...: Find control name by ID.
 ; Syntax ........: _GUIUtils_CtrlNameByID($oForm, $iCtrlID)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
 ;                  $iCtrlID             - control ID.
@@ -996,7 +1001,7 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_HCtrl
-; Description ...: Get control handle by name
+; Description ...: Get control handle by name.
 ; Syntax ........: _GUIUtils_HCtrl($oForm, $sCtrlName)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
 ;                  $sCtrlName           - control name.
@@ -1009,7 +1014,7 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_CtrlNameByHandle
-; Description ...: Find control name by handle
+; Description ...: Find control name by handle.
 ; Syntax ........: _GUIUtils_CtrlNameByHandle($oForm, $hCtrl)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
 ;                  $hCtrl               - control handle.
@@ -1141,7 +1146,7 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_SetInputs
-; Description ...: Define the controls that are used as inputs for $oForm
+; Description ...: Define the controls that are used as inputs for $oForm.
 ; Syntax ........: _GUIUtils_SetInputs($oForm, $vInputs)
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
 ;                  $vInputs             - Array (0- or 1-based) of control names, or string with control names separated by
@@ -1152,27 +1157,43 @@ EndFunc
 ;                  input controls.
 ; ===============================================================================================================================
 Func _GUIUtils_SetInputs($oForm, $vInputs)
-	If Not IsArray($vInputs) Then
-		$vInputs = StringSplit($vInputs, " ,-|" & Opt("GUIDataSeparatorChar"))
-		_ArrayDelete($vInputs, 0)
-	EndIf
+	If Not IsArray($vInputs) Then $vInputs = StringSplit($vInputs, " ,-|" & Opt("GUIDataSeparatorChar"))
+	If UBound($vInputs) > 0 And $vInputs[0] = UBound($vInputs) - 1 Then _ArrayDelete($vInputs, 0)
+
 	Return _objSet($oForm, "inputs", $vInputs)
 EndFunc
 
 ; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_GetInputs
+; Description ...: Get control names that are used as inputs.
+; Syntax ........: _GUIUtils_GetInputs($oForm)
+; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
+; Return values .: 0-based array of input control names
+; Author ........: matwachich
+; Remarks .......: If an input list was previously set by _GUIUtils_SetInputs, then this list is returned.
+;                  If not, all supported input names are returned.
+; ===============================================================================================================================
+Func _GUIUtils_GetInputs($oForm)
+	Local $aInputs = _objGet($oForm, "inputs", Null)
+	If IsArray($aInputs) Then Return $aInputs
+
+	$aInputs = __guiUtils_getSupportedInputsList($oForm)
+	If UBound($aInputs) <= 0 Then Return Null ; no any supported input control in $oForm
+
+	_objSet($oForm, "inputs", $aInputs)
+	Return $aInputs
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_SetButtons
-; Description ...:
+; Description ...: Define button controls that will be used by _GUIUtils_InputDialog.
 ; Syntax ........: _GUIUtils_SetButtons($oForm[, $sBtnSubmit = Default[, $sBtnCancel = Default]])
-; Parameters ....: $oForm               - an object.
-;                  $sBtnSubmit          - [optional] a string value. Default is Default.
-;                  $sBtnCancel          - [optional] a string value. Default is Default.
+; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
+;                  $sBtnSubmit          - submit button control name.
+;                  $sBtnCancel          - [optional] cancel button control name.
 ; Return values .: None
-; Author ........: Your Name
-; Modified ......:
-; Remarks .......:
-; Related .......:
-; Link ..........:
-; Example .......: No
+; Author ........: matwachich
+; Remarks .......: See remarks in _GUIUtils_InputDialog for default behaviour if buttons are not set.
 ; ===============================================================================================================================
 Func _GUIUtils_SetButtons($oForm, $sBtnSubmit, $sBtnCancel = Default)
 	_objSet($oForm, "submitBtn", $sBtnSubmit)
@@ -1188,23 +1209,63 @@ EndFunc
 ; Return values .: Object {controlName: controlData, ...} OR single control data (string, boolean or array)
 ; Author ........: matwachich
 ; Remarks .......: Input controls are: Inputs, Edits, Combo, List, Checkbox, Radiobox and DateTimePicker.
+;                  See _GUIUtils_WriteInputs for data format
 ; ===============================================================================================================================
 Func _GUIUtils_ReadInputs($oForm, $sCtrlName = "")
-	Local $oRet = _objCreate()
-
-	Local $aInputs = _objGet($oForm, "inputs", Null)
-	If $aInputs = Null Then
-		$aInputs = __guiUtils_getSupportedInputsList($oForm)
-		_objSet($oForm, "inputs", $aInputs)
-	EndIf
-
 	If $sCtrlName Then
 		Return __guiUtils_inputDialog_controlGet($oForm, $sCtrlName)
 	Else
+		Local $oRet = _objCreate(), $aInputs = _GUIUtils_GetInputs($oForm)
 		For $i = 0 To UBound($aInputs) - 1
 			_objSet($oRet, $aInputs[$i], __guiUtils_inputDialog_controlGet($oForm, $aInputs[$i]))
 		Next
 		Return $oRet
+	EndIf
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_WriteInputs
+; Description ...: Set $oForm input(s) data.
+; Syntax ........: _GUIUtils_WriteInputs($oForm[, $vCtrlNameOrDataObj = Null[, $vData = Null[, $vOptions = Null]]])
+; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
+;                  $vCtrlNameOrDataObj  - [optional] input control name OR data object ({controlName: data, ...}).
+;                                         Default is Null => reset all controls.
+;                  $vData               - [optional] only if $vCtrlNameOrDataObj is a controlName string.
+;                                         Default is Null => reset control data.
+;                  $vOptions            - [optional] only if $vCtrlNameOrDataObj is a combo/listbox controlName string.
+;                                         Default is Null => do not modifiy options.
+; Return values .: None
+; Author ........: matwachich
+; Remarks .......:
+;                  Inputs data format:
+;                  -------------------
+;                  - Input, Edit: "text"
+;                  - Check, Radiobox: boolean
+;                  - Date, Time: date or time in _NowCalc format (YYYY/MM/DD or HH[:MM[:SS]])
+;                                you can set Null for NODATE ($DTS_SHOWNONE)
+;                  - Combobox:
+;                      - Editable ($CBS_DROPDOWN): string = selected item OR edit text content ; int = selected item ID (0-based)
+;                      - Non editable ($CBS_DROPDOWNLIST): string = selected item ; int = selected item ID (0-based)
+;                      you can set controlName:options to set Combobox items (0-based array or string with
+;                      Opt("GUIDataSeparatorChar") separated items)
+;                  - Listbox:
+;                      - Singlesel: string = selected item ; int = selected item ID (0-based) ; 1 element array ([0] = string/int)
+;                      - Multisel: string =
+;                      you can set controlName:options to set Listbox items (0-based array or string with
+;                      Opt("GUIDataSeparatorChar") separated items)
+; ===============================================================================================================================
+Func _GUIUtils_WriteInputs($oForm, $vCtrlNameOrDataObj = Null, $vData = Null, $vOptions = Null)
+	If IsString($vCtrlNameOrDataObj) And $vCtrlNameOrDataObj Then
+		__guiUtils_inputDialog_controlSet($oForm, $vCtrlNameOrDataObj, $vData, $vOptions)
+	ElseIf IsObj($vCtrlNameOrDataObj) Then
+		For $sKey In _objKeys($vCtrlNameOrDataObj)
+			If Not StringInStr($sKey, ":") Then
+				__guiUtils_inputDialog_controlSet($oForm, $sKey, _
+					_objGet($vCtrlNameOrDataObj, $sKey, Null), _
+					_objGet($vCtrlNameOrDataObj, $sKey & ":options", Null) _
+				)
+			EndIf
+		Next
 	EndIf
 EndFunc
 
