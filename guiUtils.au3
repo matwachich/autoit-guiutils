@@ -799,7 +799,7 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 	_WinAPI_SetWindowSubclass(_GUIUtils_HWnd($oForm), DllCallbackGetPtr($pfnSubclassProc), 1000)
 
 	; create a dummy control that will be used to notify about controls content/data change
-	GUISwitch(_GUIUtils_HWnd($oForm))
+	Local $hPreviousGUI = GUISwitch(_GUIUtils_HWnd($oForm))
 	If Not _objExists($oForm, "###___onChangeDummy") Then _objSet($oForm, "###___onChangeDummy", GUICtrlCreateDummy())
 
 	; set controls initial data if provided (don't use _GUIUtils_WriteInputs because it doesn't support focus control)
@@ -870,7 +870,11 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 					EndIf
 				Case _objGet($oForm, "###___onChangeDummy")
 					$sCtrlName = GUICtrlRead(_objGet($oForm, "###___onChangeDummy"))
-					If IsFunc($fnOnChange) Then $fnOnChange($oForm, $sCtrlName, $vUserData)
+					If IsFunc($fnOnChange) Then
+						_objSet($oForm, "__lockOnChange", True)
+						$fnOnChange($oForm, $sCtrlName, $vUserData)
+						_objDel($oForm, "__lockOnChange")
+					EndIf
 ;~ 				Case 0 ; no event => ignore
 ;~ 				Case Else
 ;~ 					ConsoleWrite("onEvent:  " & $aMsg[0] & " (" & _GUIUtils_CtrlNameByID($oForm, $aMsg[0]) & ")" & @CRLF)
@@ -896,6 +900,9 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 	; hide GUI
 	GUISetState(@SW_HIDE, _GUIUtils_HWnd($oForm))
 	$__gGuiUtils_inputDialog_oCurrentForm = Null
+
+	; switch to previous GUI
+	GUISwitch($hPreviousGUI)
 
 	; reset input values
 	For $i = 0 To UBound($aInputCtrlNames) - 1
@@ -1253,6 +1260,10 @@ EndFunc
 ;                      - Multisel: string =
 ;                      you can set controlName:options to set Listbox items (0-based array or string with
 ;                      Opt("GUIDataSeparatorChar") separated items)
+;
+;                  Control Focus:
+;                  --------------
+;                  You can set controlName:focus in order to set input focus to controlName
 ; ===============================================================================================================================
 Func _GUIUtils_WriteInputs($oForm, $vCtrlNameOrDataObj = Null, $vData = Null, $vOptions = Null)
 	If IsString($vCtrlNameOrDataObj) And $vCtrlNameOrDataObj Then
@@ -1264,6 +1275,7 @@ Func _GUIUtils_WriteInputs($oForm, $vCtrlNameOrDataObj = Null, $vData = Null, $v
 					_objGet($vCtrlNameOrDataObj, $sKey, Null), _
 					_objGet($vCtrlNameOrDataObj, $sKey & ":options", Null) _
 				)
+				If _objGet($vCtrlNameOrDataObj, $sKey & ":focus", False) Then ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, $sKey))
 			EndIf
 		Next
 	EndIf
@@ -1733,8 +1745,8 @@ Func __guiUtils_kodaParser_createControls($oForm, $oObjects, $iXOffset = 0, $iYO
 				If $bIsFirstCall Then __guiUtils_kodaParser_calculateGUIsize($oForm, $oProperties)
 				$bIsStandardCtrl = False
 			; ---
-;~ 			Case "TAToolBar"
-;~ 				$bIsStandardCtrl = False
+			Case "TAToolBar"
+				$bIsStandardCtrl = False
 ;~ 			Case "TAImageList"
 ;~ 				$bIsStandardCtrl = False
 			Case Else
@@ -2114,6 +2126,7 @@ Func __guiUtils_jsonParser_getArray($oControl, $sItem, $vNotFound = Null, $sSpli
 EndFunc
 
 Func __guiUtils_inputDialog_subClassProc($hWnd, $iMsg, $wParam, $lParam, $iID, $pData)
+	If _objGet($__gGuiUtils_inputDialog_oCurrentForm, "__lockOnChange", False) Then Return _WinAPI_DefSubclassProc($hWnd, $iMsg, $wParam, $lParam)
 	Switch $iMsg
 		Case $WM_COMMAND
 			; first: check if COMMAND is issued from an input control
@@ -2175,7 +2188,7 @@ EndFunc
 Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOptions = Null)
 	Switch __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
 		Case "Edit", "Input"
-			GUICtrlSetData(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData <> Null ? $vData : "")
+			GUICtrlSetData(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData <> Null ? String($vData) : "")
 		Case "Checkbox", "Radio"
 			GUICtrlSetState(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData ? $GUI_CHECKED : $GUI_UNCHECKED)
 		Case "Combobox"
