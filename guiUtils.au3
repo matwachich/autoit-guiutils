@@ -1016,7 +1016,12 @@ EndFunc
 ; Author ........: matwachich
 ; ===============================================================================================================================
 Func _GUIUtils_HCtrl($oForm, $sCtrlName)
-	Return GUICtrlGetHandle(_GUIUtils_CtrlID($oForm, $sCtrlName))
+	Local $iCtrlID = _GUIUtils_CtrlID($oForm, $sCtrlName)
+	If $iCtrlID = -1 Then Return Null
+
+	Local $hCtrl = GUICtrlGetHandle($iCtrlID)
+	If Not $hCtrl Then $hCtrl = _WinAPI_GetDlgItem(_GUIUtils_HWnd($oForm), $iCtrlID) ; this is to support custom UDF created controls
+	Return $hCtrl
 EndFunc
 
 ; #FUNCTION# ====================================================================================================================
@@ -1048,6 +1053,41 @@ EndFunc
 ; ===============================================================================================================================
 Func _GUIUtils_CtrlList($oForm)
 	Return _objGet($oForm, "controls", Null)
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_CtrlSet
+; Description ...: Store or replace a user created control in the $oForm object.
+; Syntax ........: _GUIUtils_CtrlSet($oForm, $sCtrlName, $iCtrlID_or_hCtrl[, $bOverwrite = True[, $bDeleteIfExists = True]])
+; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
+;                  $sCtrlName           - control name.
+;                  $iCtrlID_or_hCtrl    - controlID (standard controls) or controlHandle (UDF controls) of the control to store.
+;                  $bOverwrite          - [optional] if False and the $sCtrlName already exists, nothing is modified.
+;                                         Default is True.
+;                  $bDeleteIfExists     - [optional] if True and $sCtrlName already exists, it is destroyed using GUICtrlDelete
+;                                         (for standard control) and _WinAPI_DestroyWindow (for UDF control).
+;                                         Default is True.
+; Return values .: Boolean
+; Author ........: matwachich
+; Remarks .......: This function is usefull to add custom (UDF for example) controls to a $oForm.
+;                  Dont worry about passing a CtrlID or HCtrl, both are handled correctly, and you will be able to normaly use
+;                  _GUIUtils_CtrlID and _GUIUtils_HCtrl.
+; ===============================================================================================================================
+Func _GUIUtils_CtrlSet($oForm, $sCtrlName, $iCtrlID_or_hCtrl, $bOverwrite = True, $bDeleteIfExists = True)
+	Local $oControls = _objGet($oForm, "controls", Null)
+	Local $bExists = _objExists($oControls, $sCtrlName)
+
+	If Not $bOverwrite And $bExists Then Return False
+
+	If $bDeleteIfExists And $bExists Then
+		GUICtrlDelete(_GUIUtils_CtrlID($oForm, $sCtrlName))
+		_WinAPI_DestroyWindow(_GUIUtils_HCtrl($oForm, $sCtrlName))
+		_objDel($oControls, $sCtrlName)
+	EndIf
+
+	If IsPtr($iCtrlID_or_hCtrl) Or IsHWnd($iCtrlID_or_hCtrl) Then $iCtrlID_or_hCtrl = _WinAPI_GetDlgCtrlID($iCtrlID_or_hCtrl)
+	_objSet($oControls, $sCtrlName, $iCtrlID_or_hCtrl)
+	Return True
 EndFunc
 
 ; #FUNCTION# ====================================================================================================================
