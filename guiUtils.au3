@@ -64,6 +64,7 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode('{title:"Input
 ; _GUIUtils_SetAccels
 ; _GUIUtils_HWnd
 ; _GUIUtils_FormName
+; _GUIUtils_CtrlSet
 ; _GUIUtils_CtrlID
 ; _GUIUtils_CtrlNameByID
 ; _GUIUtils_HCtrl
@@ -947,6 +948,18 @@ Func _GUIUtils_Destroy($oForm)
 EndFunc
 
 ; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_ListForms
+; Description ...: Returns the global Scripting.Dictionary containing hWnd:oFormObject pairs.
+; Syntax ........: _GUIUtils_ListForms()
+; Parameters ....: None
+; Return values .: Object
+; Author ........: matwachich
+; ===============================================================================================================================
+Func _GUIUtils_ListForms()
+	Return $__gGuiUtils_oForms
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_SetAccels
 ; Description ...: Set accelerators.
 ; Syntax ........: _GUIUtils_SetAccels($oForm, $vAccels)
@@ -1017,6 +1030,44 @@ Func _GUIUtils_FormName($oForm)
 	If Not IsObj($oForm) Then Return SetError(1, 0, "")
 
 	Return _objGet($oForm, "formName", "")
+EndFunc
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_CtrlSet
+; Description ...: Store or replace a user created control in the $oForm object.
+; Syntax ........: _GUIUtils_CtrlSet($oForm, $sCtrlName, $iCtrlID_or_hCtrl[, $bOverwrite = True[, $bDeleteIfExists = True]])
+; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
+;                  $sCtrlName           - control name.
+;                  $iCtrlID_or_hCtrl    - controlID (standard controls) or controlHandle (UDF controls) of the control to store.
+;                  $bOverwrite          - [optional] if False and the $sCtrlName already exists, nothing is modified.
+;                                         Default is True.
+;                  $bDeleteIfExists     - [optional] if True and $sCtrlName already exists, it is destroyed using GUICtrlDelete
+;                                         (for standard control) and _WinAPI_DestroyWindow (for UDF control).
+;                                         Default is True.
+; Return values .: Boolean
+; Author ........: matwachich
+; Remarks .......: This function is usefull to add custom (UDF for example) controls to a $oForm.
+;                  Dont worry about passing a CtrlID or HCtrl, both are handled correctly, and you will be able to normaly use
+;                  _GUIUtils_CtrlID and _GUIUtils_HCtrl.
+; ===============================================================================================================================
+Func _GUIUtils_CtrlSet($oForm, $sCtrlName, $iCtrlID_or_hCtrl, $bOverwrite = True, $bDeleteIfExists = True)
+	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
+	If Not IsObj($oForm) Then Return SetError(1, 0, False)
+
+	Local $oControls = _objGet($oForm, "controls", Null)
+	Local $bExists = _objExists($oControls, $sCtrlName)
+
+	If Not $bOverwrite And $bExists Then Return False
+
+	If $bDeleteIfExists And $bExists Then
+		GUICtrlDelete(_GUIUtils_CtrlID($oForm, $sCtrlName))
+		_WinAPI_DestroyWindow(_GUIUtils_HCtrl($oForm, $sCtrlName))
+		_objDel($oControls, $sCtrlName)
+	EndIf
+
+	If IsPtr($iCtrlID_or_hCtrl) Or IsHWnd($iCtrlID_or_hCtrl) Then $iCtrlID_or_hCtrl = _WinAPI_GetDlgCtrlID($iCtrlID_or_hCtrl)
+	_objSet($oControls, $sCtrlName, $iCtrlID_or_hCtrl)
+	Return True
 EndFunc
 
 ; #FUNCTION# ====================================================================================================================
@@ -1115,44 +1166,6 @@ Func _GUIUtils_CtrlList($oForm)
 	If Not IsObj($oForm) Then Return SetError(1, 0, Null)
 
 	Return _objGet($oForm, "controls", Null)
-EndFunc
-
-; #FUNCTION# ====================================================================================================================
-; Name ..........: _GUIUtils_CtrlSet
-; Description ...: Store or replace a user created control in the $oForm object.
-; Syntax ........: _GUIUtils_CtrlSet($oForm, $sCtrlName, $iCtrlID_or_hCtrl[, $bOverwrite = True[, $bDeleteIfExists = True]])
-; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
-;                  $sCtrlName           - control name.
-;                  $iCtrlID_or_hCtrl    - controlID (standard controls) or controlHandle (UDF controls) of the control to store.
-;                  $bOverwrite          - [optional] if False and the $sCtrlName already exists, nothing is modified.
-;                                         Default is True.
-;                  $bDeleteIfExists     - [optional] if True and $sCtrlName already exists, it is destroyed using GUICtrlDelete
-;                                         (for standard control) and _WinAPI_DestroyWindow (for UDF control).
-;                                         Default is True.
-; Return values .: Boolean
-; Author ........: matwachich
-; Remarks .......: This function is usefull to add custom (UDF for example) controls to a $oForm.
-;                  Dont worry about passing a CtrlID or HCtrl, both are handled correctly, and you will be able to normaly use
-;                  _GUIUtils_CtrlID and _GUIUtils_HCtrl.
-; ===============================================================================================================================
-Func _GUIUtils_CtrlSet($oForm, $sCtrlName, $iCtrlID_or_hCtrl, $bOverwrite = True, $bDeleteIfExists = True)
-	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
-	If Not IsObj($oForm) Then Return SetError(1, 0, False)
-
-	Local $oControls = _objGet($oForm, "controls", Null)
-	Local $bExists = _objExists($oControls, $sCtrlName)
-
-	If Not $bOverwrite And $bExists Then Return False
-
-	If $bDeleteIfExists And $bExists Then
-		GUICtrlDelete(_GUIUtils_CtrlID($oForm, $sCtrlName))
-		_WinAPI_DestroyWindow(_GUIUtils_HCtrl($oForm, $sCtrlName))
-		_objDel($oControls, $sCtrlName)
-	EndIf
-
-	If IsPtr($iCtrlID_or_hCtrl) Or IsHWnd($iCtrlID_or_hCtrl) Then $iCtrlID_or_hCtrl = _WinAPI_GetDlgCtrlID($iCtrlID_or_hCtrl)
-	_objSet($oControls, $sCtrlName, $iCtrlID_or_hCtrl)
-	Return True
 EndFunc
 
 ; #FUNCTION# ====================================================================================================================
@@ -2330,7 +2343,7 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 		Case "Checkbox", "Radio"
 			GUICtrlSetState(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData ? $GUI_CHECKED : $GUI_UNCHECKED)
 		Case "Combobox"
-			If $vOptions Then
+			If $vOptions <> Null Then
 				If Not IsArray($vOptions) Then
 					$vOptions = StringSplit($vOptions, Opt("GUIDataSeparatorChar"))
 					_ArrayDelete($vOptions, 0)
@@ -2358,7 +2371,7 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 				_GUICtrlComboBox_SetEditText(_GUIUtils_HCtrl($oForm, $sCtrlName), "")
 			EndIf
 		Case "Listbox"
-			If $vOptions Then
+			If $vOptions <> Null Then
 				If Not IsArray($vOptions) Then
 					$vOptions = StringSplit($vOptions, Opt("GUIDataSeparatorChar"))
 					_ArrayDelete($vOptions, 0)
