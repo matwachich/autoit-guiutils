@@ -61,6 +61,7 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode('{title:"Input
 ;
 ; > Region - FormObject Accessing
 ; _GUIUtils_Destroy
+; _GUIUtils_ListForms
 ; _GUIUtils_SetAccels
 ; _GUIUtils_HWnd
 ; _GUIUtils_FormName
@@ -2314,6 +2315,7 @@ Func __guiUtils_inputDialog_controlGet($oForm, $sCtrlName)
 	Switch __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
 		Case "Input", "Edit", "Combobox"
 			Return GUICtrlRead(_GUIUtils_CtrlID($oForm, $sCtrlName))
+
 		Case "Listbox"
 			If BitAND(_WinAPI_GetWindowLong(_GUIUtils_HCtrl($oForm, $sCtrlName), $GWL_STYLE), $LBS_MULTIPLESEL) Then
 				Local $aRet = _GUICtrlListBox_GetSelItemsText(_GUIUtils_HCtrl($oForm, $sCtrlName))
@@ -2324,14 +2326,18 @@ Func __guiUtils_inputDialog_controlGet($oForm, $sCtrlName)
 				If $aRet = -1 Then Return ""
 				Return _GUICtrlListBox_GetText(_GUIUtils_HCtrl($oForm, $sCtrlName), $aRet)
 			EndIf
+
 		Case "Checkbox", "Radio"
 			Return GUICtrlRead(_GUIUtils_CtrlID($oForm, $sCtrlName)) = $GUI_CHECKED
+
 		Case "Date"
-			Local $aDateTime = _GUICtrlDTP_GetSystemTime(_GUIUtils_HCtrl($oForm, $sCtrlName))
-			Return @error ? Null : StringFormat("%04d/%02d/%02d", $aDateTime[0], $aDateTime[1], $aDateTime[2])
+			Local $tST = _GUICtrlDTP_GetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName))
+			Return @error ? Null : StringFormat("%04d/%02d/%02d", $tST.Year, $tST.Month, $tST.Day)
+
 		Case "Time"
-			Local $aDateTime = _GUICtrlDTP_GetSystemTime(_GUIUtils_HCtrl($oForm, $sCtrlName))
-			Return @error ? Null : StringFormat("%02d:%02d:%02d", $aDateTime[3], $aDateTime[4], $aDateTime[5])
+			Local $tST = _GUICtrlDTP_GetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName))
+			Return @error ? Null : StringFormat("%02d:%02d:%02d", $tST.Hour, $tST.Minute, $tST.Second)
+
 	EndSwitch
 	Return ""
 EndFunc
@@ -2340,8 +2346,10 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 	Switch __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
 		Case "Edit", "Input"
 			GUICtrlSetData(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData <> Null ? String($vData) : "")
+
 		Case "Checkbox", "Radio"
 			GUICtrlSetState(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData ? $GUI_CHECKED : $GUI_UNCHECKED)
+
 		Case "Combobox"
 			If $vOptions <> Null Then
 				If Not IsArray($vOptions) Then
@@ -2370,6 +2378,7 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 				_GUICtrlComboBox_SetCurSel(_GUIUtils_HCtrl($oForm, $sCtrlName))
 				_GUICtrlComboBox_SetEditText(_GUIUtils_HCtrl($oForm, $sCtrlName), "")
 			EndIf
+
 		Case "Listbox"
 			If $vOptions <> Null Then
 				If Not IsArray($vOptions) Then
@@ -2409,6 +2418,7 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 					_GUICtrlListBox_SetCurSel(_GUIUtils_HCtrl($oForm, $sCtrlName), -1)
 				EndIf
 			EndIf
+
 		Case "Date"
 			Local $tST
 			If $vData Then
@@ -2419,6 +2429,7 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 				$tST = _Date_Time_GetSystemTime()
 			EndIf
 			_GUICtrlDTP_SetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName), $tST, $vData = Null)
+
 		Case "Time"
 			Local $tST
 			If $vData Then
@@ -2432,6 +2443,7 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 				$tST = _Date_Time_GetSystemTime()
 			EndIf
 			_GUICtrlDTP_SetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName), $tST, $vData = Null)
+
 	EndSwitch
 EndFunc
 
