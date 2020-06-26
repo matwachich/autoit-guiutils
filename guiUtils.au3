@@ -46,7 +46,15 @@ Global $__gGuiUtils_oForms = _objCreate() ; object that will hold pairs of hwnd:
 
 ; #CONSTANTS# ===================================================================================================================
 ; Default JSON form configuration
-Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode('{title:"InputBox" labelsMaxWidth:300 inputsWidth:300 maxHeight:' & (@DesktopHeight * 2 / 3) & ' margin:8 inputLabelVerticalPadding:3 submitBtn:{text:"OK" width:100 height:25} cancelBtn:{text:"Cancel" width:80 height:25}}')
+Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
+	'title:"InputBox" ' & _
+	'labelsMaxWidth:300 inputsWidth:300 ' & _
+	'maxHeight:' & (@DesktopHeight * 2 / 3) & ' ' & _
+	'margin:8 ' & _
+	'inputLabelVerticalPadding:3 ' & _
+	'submitBtn:{text:"OK" width:100 height:25} ' & _
+	'cancelBtn:{text:"Cancel" width:80 height:25}' & _
+"}")
 ; ===============================================================================================================================
 
 ; #CURRENT# =====================================================================================================================
@@ -58,6 +66,9 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode('{title:"Input
 ;
 ; > Region - InputBox behaviour
 ; _GUIUtils_InputDialog
+;
+; > Region - MultiGUIRegisterMsg
+; _GUIUtils_RegisterMsg
 ;
 ; > Region - FormObject Accessing
 ; _GUIUtils_Destroy
@@ -85,6 +96,7 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode('{title:"Input
 ; ===============================================================================================================================
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
+; __guiUtils_registerMsgDispatcher
 ; __guiUtils_getSupportedInputsList
 ; __guiUtils_identifyControl
 ; __guiUtils_kodaParser_createGUI
@@ -825,11 +837,6 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 		Next
 	EndIf
 
-	; show and activate window
-	$__gGuiUtils_inputDialog_oCurrentForm = $oForm
-	GUISetState(@SW_SHOW, _GUIUtils_HWnd($oForm))
-	WinActivate(_GUIUtils_HWnd($oForm))
-
 	; always save initially focused control, and restore it after
 	Local $focusCtrl = ControlGetFocus(_GUIUtils_HWnd($oForm))
 
@@ -842,11 +849,16 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 		ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, _objGet($oForm, "initialFocus", $aInputCtrlNames[0])))
 	EndIf
 
+	; show and activate window
+	$__gGuiUtils_inputDialog_oCurrentForm = $oForm
+	GUISetState(@SW_SHOW, _GUIUtils_HWnd($oForm))
+	WinActivate(_GUIUtils_HWnd($oForm))
+
 	; set close on Escape
 	$iOldCloseOnEscValue = Opt("GUICloseOnEsc", 1)
 
 	; enter main loop
-	Local $aMsg, $oRead = _objCreate()
+	Local $aMsg, $oRead = _objCreate(), $iError = 0
 	While 1
 		$aMsg = GUIGetMsg(1)
 		If $aMsg[1] = _GUIUtils_HWnd($oForm) Then
@@ -854,7 +866,7 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 				Case $GUI_EVENT_CLOSE, $iCancelBtnID
 					; dialog canceled
 					$oRead = Null
-					SetError(1)
+					$iError = 1
 					ExitLoop
 				Case _GUIUtils_CtrlID($oForm, $sSubmitBtnName)
 					; read values
@@ -873,7 +885,7 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 								ExitLoop
 							Case $iRet < 0 ; return error
 								$oRead = Null
-								SetError(1)
+								$iError = 1
 								ExitLoop
 							; else (0), just continu looping (do nothing)
 						EndSelect
@@ -919,7 +931,116 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 		__guiUtils_inputDialog_controlSet($oForm, $aInputCtrlNames[$i], Null, Null)
 	Next
 
-	Return $oRead
+	Return SetError($iError, 0, $oRead)
+EndFunc
+
+# ===============================================================================================================================
+#EndRegion
+# ===============================================================================================================================
+
+# ===============================================================================================================================
+#Region - MultiGUIRegisterMsg
+# ===============================================================================================================================
+
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_RegisterMsg
+; Description ...: Register message(s) with a single Form.
+; Syntax ........: _GUIUtils_RegisterMsg($oForm[, $iMsg = Null[, $vFunc = Null]])
+; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKoda or _GUIUtils_CreateFromJSON).
+;                  $iMsg                - [optional] Message(s) to register. If Null, all GUI's message handlers are unregistered.
+;                  $vFunc               - [optional] The handler (function) to associate with the message(s). If Null, any
+;                                         registered message handler is removed.
+; Return values .: True
+; Author ........: matwachich
+; Remarks .......: This function is for when you need to have different message handlers for different forms.
+; ===============================================================================================================================
+Func _GUIUtils_RegisterMsg($oForm, $iMsg = Null, $vFunc = Null)
+	; retreive form object
+	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
+
+	; if $iMsg is a string, register many messages
+	If IsString($iMsg) Then
+		$iMsg = StringSplit($iMsg, " ,;:.-")
+		For $i = 1 To $iMsg[0]
+			_GUIUtils_RegisterMsg($oForm, Int($iMsg[$i]), $vFunc)
+		Next
+		Return True
+	EndIf
+
+	; create an object inside form object that contains: iMsg => funcName pairs
+	Local $oRegMsgs = _objGet($oForm, "registerMsg", Null)
+	If Not IsObj($oRegMsgs) Then
+		$oRegMsgs = _objCreate()
+		_objSet($oForm, "registerMsg", $oRegMsgs)
+	EndIf
+
+	; create a static object that contains registration count for each message
+	; incremented on registration, decremented on deregistration
+	; message is unregistred when it reaches 0
+	Static $oMsgsRegCount = _objCreate()
+
+	;
+	Select
+		; register one message
+		Case $iMsg <> Null And $vFunc <> Null
+			; store message handler with form object
+			_objSet($oRegMsgs, $iMsg, IsFunc($vFunc) ? FuncName($vFunc) : String($vFunc))
+
+			; register message and increment message registration count
+			Local $iRegCount = _objGet($oMsgsRegCount, $iMsg, 0)
+			If $iRegCount <= 0 Then GUIRegisterMsg(Int($iMsg), __guiUtils_registerMsgDispatcher)
+			_objSet($oMsgsRegCount, $iMsg, $iRegCount + 1)
+			Return True
+		; ---
+		; unregister one message
+		Case $iMsg <> Null
+			If _objExists($oRegMsgs, $iMsg) Then
+				; remove message handler
+				_objDel($oRegMsgs, $iMsg)
+
+				; decrement message's registration count
+				Local $iRegCount = _objGet($oMsgsRegCount, $iMsg, 0)
+				$iRegCount -= 1
+				If $iRegCount <= 0 Then
+					GUIRegisterMsg($iMsg, "")
+					_objDel($oMsgsRegCount, $iMsg)
+				Else
+					_objSet($oMsgsRegCount, $iMsg, $iRegCount)
+				EndIf
+			EndIf
+			Return True
+		; ---
+		; unregister all messages for one GUI
+		Case Else
+			Local $iRegCount
+			For $iMsg In _objKeys($oRegMsgs)
+				; decrement messages registration count
+				$iRegCount = _objGet($oMsgsRegCount, $iMsg, 0)
+				$iRegCount -= 1
+				If $iRegCount <= 0 Then
+					GUIRegisterMsg($iMsg, "")
+					_objDel($oMsgsRegCount, $iMsg)
+				Else
+					_objSet($oMsgsRegCount, $iMsg, $iRegCount)
+				EndIf
+			Next
+
+			; remove all message handlers
+			_objEmpty($oRegMsgs)
+			Return True
+	EndSelect
+EndFunc
+
+Func __guiUtils_registerMsgDispatcher($hWnd, $iMsg, $wParam, $lParam)
+	Local $oForm = _objGet($__gGuiUtils_oForms, $hWnd, Null)
+	If IsObj($oForm) Then
+		Local $oRegMsgs = _objGet($oForm, "registerMsg", Null)
+		If IsObj($oRegMsgs) Then
+			$sFunc = _objGet($oRegMsgs, $iMsg, "")
+			If $sFunc Then Return SetError(0, 1, Call($sFunc, $hWnd, $iMsg, $wParam, $lParam))
+		EndIf
+	EndIf
+	Return SetError(0, 0, $GUI_RUNDEFMSG)
 EndFunc
 
 # ===============================================================================================================================
