@@ -9,8 +9,8 @@ JSON Form Definition {
     title: Window title (default: @ScriptName)
     font: GUISetFont (default: do nothing)
 
-    labelsMaxWidth: max width of labels column (default: 300)
-    inputsWidth: width of inputs column (default: 300)
+    labelsMaxWidth: max width of labels column (default: @DesktopWidth / 5)
+    inputsWidth: width of inputs column (default: @DesktopWidth / 5)
     maxHeight: maximum GUI height. more inputs will be placed in a new column (default: @DesktopHeight * 2 / 3)
     margin: default vertical and horizontal margins between controls and dialog borders (default: 8)
     inputLabelVerticalPadding: vertical bias of the inputLabel according to it's control (default: 3)
@@ -155,6 +155,8 @@ JSON Form Definition {
 			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
 
             value: current selected date (always YYYY/MM/DD) (default: current date)
+            
+            format: format the date is read (default: yyyy/MM/dd)
         }
         {
             type: "time" / "timepick" / "timepicker"
@@ -167,6 +169,8 @@ JSON Form Definition {
 			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
 
             value: current selected time (always HH:MM:SS) (default: current time)
+            
+            format: format the time is read (default: HH:mm:ss)
         }
 
         // checkboxes

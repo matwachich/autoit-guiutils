@@ -48,7 +48,8 @@ Global $__gGuiUtils_oForms = _objCreate() ; object that will hold pairs of hwnd:
 ; Default JSON form configuration
 Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
 	'title:"InputBox" ' & _
-	'labelsMaxWidth:300 inputsWidth:300 ' & _
+	'labelsMaxWidth:' & (@DesktopWidth / 5) & ' ' & _
+	'inputsWidth:' & (@DesktopWidth / 5) & ' ' & _
 	'maxHeight:' & (@DesktopHeight * 2 / 3) & ' ' & _
 	'margin:8 ' & _
 	'inputLabelVerticalPadding:3 ' & _
@@ -93,10 +94,14 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
 ; _GUIUtils_SetButtons
 ; _GUIUtils_ReadInputs
 ; _GUIUtils_WriteInputs
+;
+; > Region - Misc
+; _GUIUtils_GetFont
 ; ===============================================================================================================================
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
 ; __guiUtils_registerMsgDispatcher
+; __guiUtils_getFormHandleOrObject
 ; __guiUtils_getSupportedInputsList
 ; __guiUtils_identifyControl
 ; __guiUtils_kodaParser_createGUI
@@ -111,7 +116,7 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
 ; __guiUtils_kodaParser_identifiers_cursor
 ; __guiUtils_kodaParser_identifiers_colors
 ; __guiUtils_jsonParser_stringSize
-; __guiUtils_jsonParser_controlGetFont
+; __guiUtils_jsonParser_getFont
 ; __guiUtils_jsonParser_controlSetFontAndColors
 ; __guiUtils_jsonParser_getArray
 ; __guiUtils_inputDialog_subClassProc
@@ -157,7 +162,7 @@ Func _GUIUtils_CreateFromKODA($sFileOrXML, $hParent = Null, $iWidth = -1, $iHeig
 	If Not $oXML.LoadXML($sFileOrXML) Then Return SetError(1, 0, Null)
 
 	; create GUI
-	__guiUtils_kodaParser_createGUI($oForm, $oXML, $iWidth, $iHeight, $hParent)
+	__guiUtils_kodaParser_createGUI($oForm, $oXML, $iWidth, $iHeight, __guiUtils_getFormHandleOrObject($hParent, True))
 	If @error Then Return SetError(1 + @error, 0, Null)
 
 	; get parsed gui properties
@@ -227,6 +232,9 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 		$oJSON = $vJSON
 	EndIf
 
+	; ensure $hParent is a HWND
+	$hParent = __guiUtils_getFormHandleOrObject($hParent, True)
+
 	; set defaults
 	_objCopy($oJSON, $__gGuiUtils_jsonParser_oDefaultConfig)
 
@@ -235,6 +243,9 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	Local $aJSONControls = _objGet($oJSON, "controls")
 	If Not IsArray($aJSONControls) Then Return SetError(1, 0, Null)
 
+	; get default GUI font
+	Local $aGUIFont = __guiUtils_jsonParser_getFont($oJSON, _GUIUtils_GetFont($hParent))
+
 	; calculate labels Width (for all labels) and Heights (for each one)
 	Local $iLabelsWidth = 0
 	For $i = 0 To UBound($aJSONControls) - 1
@@ -242,19 +253,26 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 		If Not _objExists($aJSONControls[$i], "type") Then Return SetError(1, 0, Null)
 
 		; force id for all controls ...
-		_objSet($aJSONControls[$i], "id", StringFormat(_objGet($aJSONControls[$i], "type") & "_%02d", $i), False)
+		If Not _objGet($aJSONControls[$i], "id") Then _
+			_objSet($aJSONControls[$i], "id", StringFormat(_objGet($aJSONControls[$i], "type") & "_%02d", $i), True)
 
 		Switch _objGet($aJSONControls[$i], "type")
 			Case "separator", "label" ; ignored
 			Case "check", "checkbox", "radio", "radiobox"
 				; ... and label for all but separator and label
-				_objSet($aJSONControls[$i], "label", _StringTitleCase(_objGet($aJSONControls[$i], "id")), False)
+				If Not _objGet($aJSONControls[$i], "label") Then _
+					_objSet($aJSONControls[$i], "label", _StringTitleCase(_objGet($aJSONControls[$i], "id")), True)
 			Case Else
 				; ... and label for all but separator and label
-				_objSet($aJSONControls[$i], "label", _StringTitleCase(_objGet($aJSONControls[$i], "id")), False)
+				If Not _objGet($aJSONControls[$i], "label") Then _
+					_objSet($aJSONControls[$i], "label", _StringTitleCase(_objGet($aJSONControls[$i], "id")), True)
 
 				; calculate dimensions of control label
-				$aSize = __guiUtils_jsonParser_stringSize(_objGet($aJSONControls[$i], "label"), __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), _objGet($oJSON, "labelsMaxWidth"))
+				$aSize = __guiUtils_jsonParser_stringSize( _
+					_objGet($aJSONControls[$i], "label"), _
+					__guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), _
+					_objGet($oJSON, "labelsMaxWidth") _
+				)
 
 				If $aSize[2] > $iLabelsWidth Then $iLabelsWidth = $aSize[2]
 
@@ -268,7 +286,11 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	; when labels max width is calculated, re-iterate over controls to resize labels
 	For $i = 0 To UBound($aJSONControls) - 1
 		If _objGet($aJSONControls[$i], "type") = "label" Then
-			$aSize = __guiUtils_jsonParser_stringSize(_objGet($aJSONControls[$i], "text"), __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), $iLabelsWidth + _objGet($oJSON, "margin") + _objGet($oJSON, "inputsWidth"))
+			$aSize = __guiUtils_jsonParser_stringSize( _
+				_objGet($aJSONControls[$i], "text"), _
+				__guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), _
+				$iLabelsWidth + _objGet($oJSON, "margin") + _objGet($oJSON, "inputsWidth") _
+			)
 			_objSet($aJSONControls[$i], "text", $aSize[0])
 			_objSet($aJSONControls[$i], "width", $aSize[2])
 			_objSet($aJSONControls[$i], "height", $aSize[3])
@@ -289,8 +311,13 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	_objSet($oForm, "formName", _objGet($oJSON, "title"))
 
 	; set GUI's font and colors
-	$aFont = _objGet($oJSON, "font", Null)
-	If UBound($aFont) = 4 Then GUISetFont($aFont[0], $aFont[1], $aFont[2], $aFont[3], $hGUI)
+	If UBound($aGUIFont) = 4 Then
+		GUISetFont($aGUIFont[0], $aGUIFont[1], $aGUIFont[2], $aGUIFont[3], $hGUI)
+	Else
+		; here it means that we dont have a default font because no Parent GUI has been passed.
+		; we need a default font, especially for the header (for the +2 and Bold)
+		$aGUIFont = _GUIUtils_GetFont($hGUI)
+	EndIf
 
 	$iColor = _objGet($oJSON, "bkColor", Null)
 	If $iColor <> Null Then GUISetBkColor($iColor, $hGUI)
@@ -303,8 +330,9 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 	; ---------------------------------------------------------------
 	; build controls
-	Local $oControls = _objCreate(), $iCtrlID
+	Local $oControls = _objCreate(), $oOptions = _objCreate(), $iCtrlID
 	_objSet($oForm, "controls", $oControls)
+	_objSet($oForm, "options", $oOptions)
 
 	Local $aInputs[0]
 
@@ -338,7 +366,11 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 			Case "check", "checkbox", "radio", "radiobox"
 				; calculate input height
-				$aSize = __guiUtils_jsonParser_stringSize(_objGet($aJSONControls[$i], "label"), __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), _objGet($oJSON, "inputsWidth"))
+				$aSize = __guiUtils_jsonParser_stringSize( _
+					_objGet($aJSONControls[$i], "label"), _
+					__guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), _
+					_objGet($oJSON, "inputsWidth") _
+				)
 
 				; add multiline style if text is too long
 				If StringInStr($aSize[0], @CRLF) And Not BitAND(_objGet($aJSONControls[$i], "style", 0), $BS_MULTILINE) Then
@@ -403,7 +435,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 				; set label font and colors
 				__guiUtils_jsonParser_controlSetFontAndColors( _
 					$iCtrlID, _
-					__guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i], "labelFont"), _
+					__guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont, "labelFont"), _
 					_objGet($aJSONControls[$i], "labelColor", Null), _
 					_objGet($aJSONControls[$i], "labelBkColor", Null) _
 				)
@@ -412,7 +444,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 				Switch _objGet($aJSONControls[$i], "type")
 					Case "input", "password"
 						; calculate input height
-						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), 0)
+						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
 						$iInputHeight = $iInputHeight[3] + 4
 
 						; check if password
@@ -434,7 +466,11 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 					Case "edit", "text"
 						; calculate input height
-						$iInputHeight = __guiUtils_jsonParser_stringSize(StringStripWS(_StringRepeat("Line" & @CRLF, _objGet($aJSONControls[$i], "lines", 3)), 3), __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), 0)
+						$iInputHeight = __guiUtils_jsonParser_stringSize( _
+							StringStripWS(_StringRepeat("Line" & @CRLF, _objGet($aJSONControls[$i], "lines", 3)), 3), _
+							__guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), _
+							0 _
+						)
 						$iInputHeight = $iInputHeight[3] + _objGet($aJSONControls[$i], "lines", 3) + (BitAND(_objGet($aJSONControls[$i], "style", $GUI_SS_DEFAULT_EDIT), $WS_HSCROLL) ? _WinAPI_GetSystemMetrics($SM_CYHSCROLL) : 0)
 
 						; create edit
@@ -448,7 +484,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 					Case "combo", "combobox"
 						; calculate input height
-						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), 0)
+						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
 						$iInputHeight = $iInputHeight[3] + 4
 
 						; set control style
@@ -511,7 +547,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 						EndIf
 
 						; calculate input height
-						$iInputHeight = __guiUtils_jsonParser_stringSize(StringStripWS(_StringRepeat("Line" & @CRLF, _objGet($aJSONControls[$i], "lines", 3)), 3), __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), 0)
+						$iInputHeight = __guiUtils_jsonParser_stringSize(StringStripWS(_StringRepeat("Line" & @CRLF, _objGet($aJSONControls[$i], "lines", 3)), 3), __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
 						$iInputHeight = $iInputHeight[3] + $iLines + (BitAND($iStyle, $WS_HSCROLL) ? _WinAPI_GetSystemMetrics($SM_CYHSCROLL) : 0)
 
 						; create control
@@ -544,7 +580,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 					Case "date", "datepick", "datepicker"
 						; calculate input height
-						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), 0)
+						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
 						$iInputHeight = $iInputHeight[3] + 4
 
 						; create control
@@ -556,9 +592,14 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 						)
 						_objSet($oControls, _objGet($aJSONControls[$i], "id"), $iCtrlID)
 
+						; store options
+						If _objExists($aJSONControls[$i], "format") Then
+							_objSet($oOptions, _objGet($aJSONControls[$i], "id") & "_format", _objGet($aJSONControls[$i], "format"))
+						EndIf
+
 					Case "time", "timepick", "timepicker"
 						; calculate input height
-						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i]), 0)
+						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
 						$iInputHeight = $iInputHeight[3] + 4
 
 						; create control
@@ -569,6 +610,11 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 							_objGet($aJSONControls[$i], "style", $DTS_TIMEFORMAT), _objGet($aJSONControls[$i], "exStyle", -1) _
 						)
 						_objSet($oControls, _objGet($aJSONControls[$i], "id"), $iCtrlID)
+
+						; store options
+						If _objExists($aJSONControls[$i], "format") Then
+							_objSet($oOptions, _objGet($aJSONControls[$i], "id") & "_format", _objGet($aJSONControls[$i], "format"))
+						EndIf
 				EndSwitch
 
 				; add to inputs list
@@ -584,7 +630,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 		; set control font and colors
 		__guiUtils_jsonParser_controlSetFontAndColors( _
 			$iCtrlID, _
-			__guiUtils_jsonParser_controlGetFont($oJSON, $aJSONControls[$i], "font"), _
+			__guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), _
 			_objGet($aJSONControls[$i], "color", Null), _objGet($aJSONControls[$i], "bkColor", Null) _
 		)
 
@@ -665,7 +711,14 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	EndIf
 
 	If _objGet($oHeader, "text", "") Then
-		$aSize = __guiUtils_jsonParser_stringSize(_objGet($oHeader, "text"), __guiUtils_jsonParser_controlGetFont($oJSON, $oHeader), $iMaxX)
+		$aHeaderFont = $aGUIFont
+		If IsArray($aHeaderFont) Then
+			$aHeaderFont[0] += 2
+			$aHeaderFont[1] = 800
+		EndIf
+		$aHeaderFont = __guiUtils_jsonParser_getFont($oHeader, $aHeaderFont)
+
+		$aSize = __guiUtils_jsonParser_stringSize(_objGet($oHeader, "text"), $aHeaderFont, $iMaxX)
 
 		$iHeaderLabel = GUICtrlCreateLabel($aSize[0], _
 			$iMargin, $iMargin, $iMaxX, $aSize[3], _
@@ -675,7 +728,8 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 		$iHeaderSeparator = GUICtrlCreateLabel("", $iMargin, $iMargin + $aSize[3] + $iMargin, $iMaxX - $iMargin, 1, $SS_BLACKRECT)
 
-		__guiUtils_jsonParser_controlSetFontAndColors($iHeaderLabel, __guiUtils_jsonParser_controlGetFont($oJSON, $oHeader), _objGet($oHeader, "color", Null), _objGet($oHeader, "bkColor", Null))
+
+		__guiUtils_jsonParser_controlSetFontAndColors($iHeaderLabel, $aHeaderFont, _objGet($oHeader, "color", Null), _objGet($oHeader, "bkColor", Null))
 
 		; move all controls to make place for the header and its separator
 		For $sKey In _objKeys($oControls)
@@ -726,11 +780,13 @@ EndFunc
 ; Name ..........: _GUIUtils_InputDialog
 ; Description ...: Takes a KODA/JSON created GUI, defined by it's representing object $oForm, and displays it as a modal input
 ;                  dialog box.
-; Syntax ........: _GUIUtils_InputDialog($oForm[, $oInitialData = Null[, $fnValidation = Null[, $fnOnChange = Null[,
-;                  $vUserData = Null]]]])
+; Syntax ........: _GUIUtils_InputDialog($oForm[, $oInitialData = Null[, $fnOnSubmit = Null[, $fnOnInit = Null[,
+;                  $fnOnChange = Null[, $vUserData = Null]]]]])
 ; Parameters ....: $oForm               - GUI object.
 ;                  $oInitialData        - [optional] initial inputs data ({inputName: inputData, ...}). Default is Null.
-;                  $fnValidation        - [optional] function called when user press dialog's OK button. Default is Null.
+;                  $fnOnSubmit          - [optional] function called when user press dialog's OK button. Default is Null.
+;                  $fnOnInit            - [optional] function called just before showing the input, when initial data is filled.
+;                                                    Default is Null.
 ;                  $fnOnChange          - [optional] function called when the data of some input is changed. Default is Null.
 ;                  $vUserData           - [optional] user data that is passed to callback functions. Default is Null.
 ; Return values .: Object containing inputs data ({inputName: inputData, ...})
@@ -760,21 +816,25 @@ EndFunc
 ;
 ;                  - About callback functions:
 ;                    -------------------------
-;                    This function accepts 2 callback functions, none of them is mendatory.
+;                    This function accepts 3 callback functions, none of them is mendatory.
 ;                    All of them takes 3 parameters: $oForm, $vData, $vUserData. $oForm and $vUserData dont need further
 ;                    explanations. $vData is different for each callback.
-;                      - $fnValidation:
+;                      - $fnOnSubmit:
 ;                        if set, this callback is called when Validation Button is pressed.
 ;                        $vData is an object containing all inputs values ({inputName: inputData, ...}).
 ;                        you can check the data for validity and completeness in this function, then return:
 ;                        (> 0) to validate them (the dialog will be closed and the data returned)
 ;                        (< 0) to close dialog, but returning Null and @error = 1
 ;                        (= 0) to do nothing (keep dialog open)
+;                      - $fnOnInit:
+;                        if set, this callback is called after $oInitialData is filled into the dialog inputs, and just before
+;                        the dialog is shown.
+;                        $vData is an object containing all inputs values ({inputName: inputData, ...}).
 ;                      - $fnOnChange:
 ;                        if set, called every time the content/data of an input control gets changed.
 ;                        $vData is the inputName of the modified control
 ; ===============================================================================================================================
-Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $fnOnChange = Null, $vUserData = Null)
+Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnOnSubmit = Null, $fnOnInit = Null, $fnOnChange = Null, $vUserData = Null)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, Null)
 
@@ -849,6 +909,11 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 		ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, _objGet($oForm, "initialFocus", $aInputCtrlNames[0])))
 	EndIf
 
+	; call onInit
+	If IsFunc($fnOnInit) Then
+		$fnOnInit($oForm, _GUIUtils_ReadInputs($oForm), $vUserData)
+	EndIf
+
 	; show and activate window
 	$__gGuiUtils_inputDialog_oCurrentForm = $oForm
 	GUISetState(@SW_SHOW, _GUIUtils_HWnd($oForm))
@@ -876,10 +941,10 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnValidation = Null, $
 					Next
 
 					; call validation function if needed, or exitloop directly
-					If Not IsFunc($fnValidation) Then
+					If Not IsFunc($fnOnSubmit) Then
 						ExitLoop
 					Else
-						Local $iRet = $fnValidation($oForm, $oRead, $vUserData)
+						Local $iRet = $fnOnSubmit($oForm, $oRead, $vUserData)
 						Select
 							Case $iRet > 0 ; return success
 								ExitLoop
@@ -1064,7 +1129,13 @@ Func _GUIUtils_Destroy($oForm)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
 
+	; unregister messages
+	_GUIUtils_RegisterMsg($oForm)
+
+	; remove Form from global store
 	_objDel($__gGuiUtils_oForms, _GUIUtils_HWnd($oForm))
+
+	; delete GUI
 	GUIDelete(_GUIUtils_HWnd($oForm))
 	Return True
 EndFunc
@@ -1559,10 +1630,72 @@ EndFunc
 # ===============================================================================================================================
 
 # ===============================================================================================================================
+#Region - Misc
+# ===============================================================================================================================
+
+Func _GUIUtils_GetFont($oForm, $bAsString = False)
+	$oForm = __guiUtils_getFormHandleOrObject($oForm, True)
+	If Not IsHWnd($oForm) Then Return SetError(1, 0, "")
+
+	Local $hPreviousGUI = GUISwitch($oForm)
+	Local $iLabel = GUICtrlCreateLabel("ABC", -100, -100)
+	Local $hFont = _SendMessage(GUICtrlGetHandle($iLabel), $WM_GETFONT)
+	Local $tLOGFONT = DllStructCreate($tagLOGFONT)
+	_WinAPI_GetObject($hFont, DllStructGetSize($tLOGFONT), DllStructGetPtr($tLOGFONT))
+	GUICtrlDelete($iLabel)
+	GUISwitch($hPreviousGUI)
+
+	; nHeight = -MulDiv(PointSize, GetDeviceCaps(hDC, LOGPIXELSY), 72);
+	; nHeight = -1 * ((PointSize * LOGPIXELSY) / 72)
+	; PointSize = nHeight * 72 / LOGPIXELSY
+
+	Local $hDC = _WinAPI_GetDC($oForm)
+	Local $aRet[] = [ _
+		Round(-1 * $tLOGFONT.Height * 72 / _WinAPI_GetDeviceCaps($hDC, 90)), _ ; LOGPIXELSY = 90
+		$tLOGFONT.Weight, _
+		0, _
+		$tLOGFONT.FaceName _
+	]
+	_WinAPI_ReleaseDC($oForm, $hDC)
+
+	If $tLOGFONT.Italic Then $aRet[2] += 2
+	If $tLOGFONT.Underline Then $aRet[2] += 4
+	If $tLOGFONT.StrikeOut Then $aRet[2] += 8
+
+	Return $bAsString ? _ArrayToString($aRet, ",") : $aRet
+EndFunc
+
+# ===============================================================================================================================
+#EndRegion
+# ===============================================================================================================================
+
+# ===============================================================================================================================
 #Region - Internal functions
 # ===============================================================================================================================
 
 #... STOP DBUG
+
+Func __guiUtils_getFormHandleOrObject($vForm, $bAsHWnd = False)
+;~ 	Select
+;~ 		Case IsHWnd($vForm)
+;~ 			If $bAsHWnd Then
+;~ 				Return $vForm
+;~ 			Else
+;~ 				Return _objGet($__gGuiUtils_oForms, $vForm, $vForm)
+;~ 			EndIf
+;~ 		Case IsObj($vForm)
+;~ 			If $bAsHWnd Then
+;~ 				Return _GUIUtils_HWnd($vForm)
+;~ 			Else
+;~ 				Return $vForm
+;~ 			EndIf
+;~ 		Case Else
+;~ 			Return $vForm
+;~ 	EndSelect
+	If $bAsHWnd And Not IsHWnd($vForm) Then $vForm = _objGet($__gGuiUtils_oForms, $vForm, $vForm)
+	If $bAsHWnd And IsObj($vForm) Then $vFont = _GUIUtils_HWnd($vForm)
+	Return $vForm
+EndFunc
 
 ; returns all *named* and *supported* controls in $oForm
 Func __guiUtils_getSupportedInputsList($oForm)
@@ -2351,14 +2484,13 @@ Func __guiUtils_jsonParser_stringSize($sText, $aFont = Null, $iMaxWidth = 0)
 	Return SetError(@error, @extended, $aRet)
 EndFunc
 
-Func __guiUtils_jsonParser_controlGetFont($oJSON, $oControl, $sFontValueKey = "font")
-	Local $vFont = _objGet($oControl, $sFontValueKey, _objGet($oJSON, "font", Null))
-	If Not IsArray($vFont) Then
-		$vFont = StringSplit($vFont, ",")
-		_ArrayDelete($vFont, 0)
-	EndIf
-	If UBound($vFont) <> 4 Then $vFont = Null
-	Return $vFont
+Func __guiUtils_jsonParser_getFont($oObject, $vDefaultFontValue = "", $sFontValueKey = "font")
+	Local $vRead = _objGet($oObject, $sFontValueKey, $vDefaultFontValue)
+	If IsArray($vRead) And UBound($vRead) = 4 Then Return $vRead
+	$vRead = StringSplit($vRead, ",")
+	_ArrayDelete($vRead, 0)
+	If UBound($vRead) = 4 Then Return $vRead
+	Return Null
 EndFunc
 
 Func __guiUtils_jsonParser_controlSetFontAndColors($iCtrlID, $vFont = Null, $iColor = Null, $iBkColor = Null)
@@ -2452,12 +2584,16 @@ Func __guiUtils_inputDialog_controlGet($oForm, $sCtrlName)
 			Return GUICtrlRead(_GUIUtils_CtrlID($oForm, $sCtrlName)) = $GUI_CHECKED
 
 		Case "Date"
+			Local $oOptions = _objGet($oForm, "options", Null)
+
 			Local $tST = _GUICtrlDTP_GetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName))
-			Return @error ? Null : StringFormat("%04d/%02d/%02d", $tST.Year, $tST.Month, $tST.Day)
+			Return @error ? Null : _WinAPI_GetDateFormat(0, $tST, 0, _objGet($oOptions, $sCtrlName & "_format", "yyyy/MM/dd"))
 
 		Case "Time"
+			Local $oOptions = _objGet($oForm, "options", Null)
+
 			Local $tST = _GUICtrlDTP_GetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName))
-			Return @error ? Null : StringFormat("%02d:%02d:%02d", $tST.Hour, $tST.Minute, $tST.Second)
+			Return @error ? Null : _WinAPI_GetTimeFormat(0, $tST, 0, _objGet($oOptions, $sCtrlName & "_format"))
 
 	EndSwitch
 	Return ""
