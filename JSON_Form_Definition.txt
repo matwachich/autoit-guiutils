@@ -45,7 +45,7 @@ JSON Form Definition {
         font, style, exStyle, color, bkColor
         tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
     }
-    // you can directly set submitBtn: "Button Text"
+    // you can directly set cancelBtn: "Button Text"
 
 
     // input controls defintion
@@ -54,6 +54,9 @@ JSON Form Definition {
 
     controls: [
         // horizontal line (GUICtrlCreateLabel with 1px height and $SS_BLACKRECT)
+        
+        You can add to any control new_col: true to make a new column juste after this control.
+        
         {
             type: "separator"
             id:   "control name" (must be unique)
@@ -126,6 +129,8 @@ JSON Form Definition {
 				   integer: current selected value index (0-based)
 
             placeholder: "placeholder text when combo edit is empty (cue banner)"
+            
+            extendedUI: true (_GUICtrlComboBox_SetExtendedUI)
         }
         {
             type: "list" / "listbox"
@@ -138,7 +143,10 @@ JSON Form Definition {
 			tip, tipTitle, tipIcon, tipOptions (GUICtrlSetTip)
 
             multisel: if true (default), $LBS_MULTISEL style is set (if not already)
-            if false, $LBS_MULTISEL style is unset (if not already)
+                      if false, $LBS_MULTISEL style is unset (if not already)
+
+            lines: force number of displayed lines (default: number of items in options ; if no items in options, defaults to 3)
+            maxLines: maximum number of displayed lines (default: 0 means no limit)
 
             options: ["line 01", "line 02", ...] OR "line 01|line 02|..." (| or Opt("GUIDataSeparatorChar"))
             value: array of strings: ["selected 01", "selected 02", ...] OR "selected 01|selected 02|..."
@@ -157,6 +165,7 @@ JSON Form Definition {
             value: current selected date (always YYYY/MM/DD) (default: current date)
             
             format: format the date is read (default: yyyy/MM/dd)
+            nullable: if true, will add $DTS_SHOWNONE (0x02) style (default: false)
         }
         {
             type: "time" / "timepick" / "timepicker"
@@ -171,10 +180,11 @@ JSON Form Definition {
             value: current selected time (always HH:MM:SS) (default: current time)
             
             format: format the time is read (default: HH:mm:ss)
+            nullable: if true, will add $DTS_SHOWNONE (0x02) style (default: false)
         }
 
         // checkboxes
-        - for check/radio boxes, the label is on the right size of the control. There is no label(Style/ExStyle/Font/Color/BkColor),
+        - for check/radio boxes, the label is on the right side of the control. There is no label(Style/ExStyle/Font/Color/BkColor),
         you can set label style using directly style, exStyle, font, color and bkColor values
         - by default, there is no vertical margin between check/radio boxes, you can force vertical margin by specifying space:true
           (usefull to make groups of radio/check boxes)

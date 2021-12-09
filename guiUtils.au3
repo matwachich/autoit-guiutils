@@ -6,7 +6,12 @@
 ;                  as advanced input boxes.
 ; Author(s) .....: matwachich
 ; Links .........: https://www.autoitscript.com/forum/topic/201594-guiutils-simply-create-guis-from-koda-input-dialogs-from-json-and-handle-them-like-inputbox-with-one-function/
-; ===============================================================================================================================
+; =================================================================================================
+
+#cs
+Bugs:
+- quand on créé un dialog à partir d'un KXF, si le premier contrôle est à x=0,y=0, alors la taille de la fenêtre est mal calculée
+#ce
 
 #include <Date.au3>
 #include <Math.au3>
@@ -41,8 +46,9 @@
 
 ; #VARIABLES# ===================================================================================================================
 Global $__gGuiUtils_inputDialog_oCurrentForm = Null
+Global $__gGuiUtils_fnCustomInputReader = Null, $__gGuiUtils_fnCustomInputWriter = Null
 Global $__gGuiUtils_oForms = _objCreate() ; object that will hold pairs of hwnd:oFormObject
-; ===============================================================================================================================
+; =================================================================================================
 
 ; #CONSTANTS# ===================================================================================================================
 ; Default JSON form configuration
@@ -56,7 +62,7 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
 	'submitBtn:{text:"OK" width:100 height:25} ' & _
 	'cancelBtn:{text:"Cancel" width:80 height:25}' & _
 "}")
-; ===============================================================================================================================
+; =================================================================================================
 
 ; #CURRENT# =====================================================================================================================
 ; > Region - KODA file parsing
@@ -70,6 +76,9 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
 ;
 ; > Region - MultiGUIRegisterMsg
 ; _GUIUtils_RegisterMsg
+;
+; > Region - Controls Subclassing
+; _GUIUtils_SubclassSet
 ;
 ; > Region - FormObject Accessing
 ; _GUIUtils_Destroy
@@ -94,10 +103,12 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
 ; _GUIUtils_SetButtons
 ; _GUIUtils_ReadInputs
 ; _GUIUtils_WriteInputs
+; _GUIUtils_SetCustomInputsReader
+; _GUIUtils_SetCustomInputsWriter
 ;
 ; > Region - Misc
 ; _GUIUtils_GetFont
-; ===============================================================================================================================
+; =================================================================================================
 
 ; #INTERNAL_USE_ONLY# ===========================================================================================================
 ; __guiUtils_registerMsgDispatcher
@@ -122,11 +133,11 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
 ; __guiUtils_inputDialog_subClassProc
 ; __guiUtils_inputDialog_controlGet
 ; __guiUtils_inputDialog_controlSet
-; ===============================================================================================================================
+; =================================================================================================
 
-# ===============================================================================================================================
+# =================================================================================================
 #Region - KODA file parsing
-# ===============================================================================================================================
+# =================================================================================================
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_CreateFromKODA
@@ -144,7 +155,7 @@ Global Const $__gGuiUtils_jsonParser_oDefaultConfig = Json_Decode("{" & _
 ;                  - Controls: Graphic, Updown, Avi, Tray Menu, COM Object, Status Bar, Tool Bar, Image List
 ;                  - Hotkeys (accelerator)
 ; Related .......: _GUIUtils_SetAccels, _GUIUtils_HWnd, _GUIUtils_CtrlID, _GUIUtils_HCtrl
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_CreateFromKODA($sFileOrXML, $hParent = Null, $iWidth = -1, $iHeight = -1)
 	; returned object that will contain control IDs
 	Local $oForm = _objCreate()
@@ -204,13 +215,13 @@ Func _GUIUtils_CreateFromKODA($sFileOrXML, $hParent = Null, $iWidth = -1, $iHeig
 	Return $oForm
 EndFunc
 
-# ===============================================================================================================================
+# =================================================================================================
 #EndRegion
-# ===============================================================================================================================
+# =================================================================================================
 
-# ===============================================================================================================================
+# =================================================================================================
 #Region - JSON definition parsing (advanced InputBox)
-# ===============================================================================================================================
+# =================================================================================================
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_CreateFromJSON
@@ -221,7 +232,7 @@ EndFunc
 ; Return values .: Object (scripting.dictionary) representing the GUI
 ; Author ........: matwachich
 ; Remarks .......: See JSON_Form_Definition.txt and examples.
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	; parse form definition
 	Local $oJSON
@@ -243,7 +254,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	Local $aJSONControls = _objGet($oJSON, "controls")
 	If Not IsArray($aJSONControls) Then Return SetError(1, 0, Null)
 
-	; get default GUI font
+	; get default GUI font (defaults to parent's font if not provided ; if no parent, $aGUIFont will be Null)
 	Local $aGUIFont = __guiUtils_jsonParser_getFont($oJSON, _GUIUtils_GetFont($hParent))
 
 	; calculate labels Width (for all labels) and Heights (for each one)
@@ -330,7 +341,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 	; ---------------------------------------------------------------
 	; build controls
-	Local $oControls = _objCreate(), $oOptions = _objCreate(), $iCtrlID
+	Local $oControls = _objCreate(), $oOptions = _objCreate(), $iCtrlID, $iLabelID
 	_objSet($oForm, "controls", $oControls)
 	_objSet($oForm, "options", $oOptions)
 
@@ -345,7 +356,11 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 		Switch _objGet($aJSONControls[$i], "type")
 			Case "separator"
 				; create separator
-				$iCtrlID = GUICtrlCreateLabel("", $iNextX, $iNextY, $iLabelsWidth + $iMargin + _objGet($oJSON, "inputsWidth"), 1, $SS_BLACKRECT)
+				$iCtrlID = GUICtrlCreateLabel("", _
+					$iNextX, $iNextY, _
+					$iLabelsWidth + $iMargin + _objGet($oJSON, "inputsWidth"), 1, _
+					$SS_BLACKRECT _
+				)
 				_objSet($oControls, _objGet($aJSONControls[$i], "id"), $iCtrlID)
 
 				; advance
@@ -356,7 +371,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 				$iCtrlID = GUICtrlCreateLabel( _
 					_objGet($aJSONControls[$i], "text"), _
 					$iNextX, $iNextY, _
-					_objGet($aJSONControls[$i], "width"), _objGet($aJSONControls[$i], "height"), _
+					$iLabelsWidth + $iMargin + _objGet($oJSON, "inputsWidth"), _objGet($aJSONControls[$i], "height"), _
 					_objGet($aJSONControls[$i], "style", -1), _objGet($aJSONControls[$i], "exStyle", -1) _
 				)
 				_objSet($oControls, _objGet($aJSONControls[$i], "id"), $iCtrlID)
@@ -424,17 +439,17 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 			Case Else ; means all controls that have a separate label
 				; create label
-				$iCtrlID = GUICtrlCreateLabel( _
+				$iLabelID = GUICtrlCreateLabel( _
 					_objGet($aJSONControls[$i], "label"), _
 					$iNextX, $iNextY + _objGet($oJSON, "inputLabelVerticalPadding"), _
 					$iLabelsWidth, _objGet($aJSONControls[$i], "labelHeight"), _
 					_objGet($aJSONControls[$i], "labelStyle", $SS_RIGHT), _objGet($aJSONControls[$i], "labelExStyle", -1) _
 				)
-				_objSet($oControls, _objGet($aJSONControls[$i], "id") & "_label", $iCtrlID)
+				_objSet($oControls, _objGet($aJSONControls[$i], "id") & "_label", $iLabelID)
 
 				; set label font and colors
 				__guiUtils_jsonParser_controlSetFontAndColors( _
-					$iCtrlID, _
+					$iLabelID, _
 					__guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont, "labelFont"), _
 					_objGet($aJSONControls[$i], "labelColor", Null), _
 					_objGet($aJSONControls[$i], "labelBkColor", Null) _
@@ -478,7 +493,8 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 							_objGet($aJSONControls[$i], "value", ""), _
 							$iNextX + $iLabelsWidth + $iMargin, $iNextY, _
 							_objGet($oJSON, "inputsWidth"), $iInputHeight, _
-							_objGet($aJSONControls[$i], "style", -1), _objGet($aJSONControls[$i], "exStyle", -1) _
+							_objGet($aJSONControls[$i], "style", BitOR($ES_WANTRETURN, $WS_VSCROLL, $ES_AUTOVSCROLL)), _
+							_objGet($aJSONControls[$i], "exStyle", -1) _
 						)
 						_objSet($oControls, _objGet($aJSONControls[$i], "id"), $iCtrlID)
 
@@ -520,14 +536,21 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 						; set initial selection
 						$vValue = _objGet($aJSONControls[$i], "value", Null)
-						If $vValue Then
-							If Not IsInt($vValue) Then $vValue = _GUICtrlComboBox_FindStringExact(GUICtrlGetHandle(-1), String($vValue))
-							If $vValue >= 0 Then
+						If $vValue <> Null Then
+							If IsInt($vValue) Then
 								_GUICtrlComboBox_SetCurSel(GUICtrlGetHandle(-1), Int($vValue))
 							Else
-								_GUICtrlComboBox_SetEditText(GUICtrlGetHandle(-1), String($vValue))
+								$vValue = _GUICtrlComboBox_FindStringExact(GUICtrlGetHandle(-1), String($vValue))
+								If $vValue >= 0 Then
+									_GUICtrlComboBox_SetCurSel(GUICtrlGetHandle(-1), Int($vValue))
+								Else
+									_GUICtrlComboBox_SetEditText(GUICtrlGetHandle(-1), String($vValue))
+								EndIf
 							EndIf
 						EndIf
+
+						; set extendedUI
+						_GUICtrlComboBox_SetExtendedUI(GUICtrlGetHandle(-1), _objGet($aJSONControls[$i], "extendedUI", True))
 
 					Case "list", "listbox"
 						; get lines count
@@ -535,6 +558,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 
 						$iLines = _objGet($aJSONControls[$i], "lines", UBound($vOptions))
 						If $iLines <= 0 Then $iLines = 3
+						If _objGet($aJSONControls[$i], "maxLines", 0) > 0 And $iLines > _objGet($aJSONControls[$i], "maxLines") Then $iLines = _objGet($aJSONControls[$i], "maxLines")
 
 						; set control style
 						$iStyle = _objGet($aJSONControls[$i], "style", BitOR($WS_BORDER,$WS_VSCROLL,$LBS_MULTIPLESEL,$LBS_NOINTEGRALHEIGHT))
@@ -547,7 +571,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 						EndIf
 
 						; calculate input height
-						$iInputHeight = __guiUtils_jsonParser_stringSize(StringStripWS(_StringRepeat("Line" & @CRLF, _objGet($aJSONControls[$i], "lines", 3)), 3), __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
+						$iInputHeight = __guiUtils_jsonParser_stringSize(StringStripWS(_StringRepeat("Line" & @CRLF, $iLines), 3), __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
 						$iInputHeight = $iInputHeight[3] + $iLines + (BitAND($iStyle, $WS_HSCROLL) ? _WinAPI_GetSystemMetrics($SM_CYHSCROLL) : 0)
 
 						; create control
@@ -583,12 +607,18 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
 						$iInputHeight = $iInputHeight[3] + 4
 
+						; set style
+						$iStyle = _objGet($aJSONControls[$i], "style", $DTS_SHORTDATEFORMAT)
+						If _objGet($aJSONControls[$i], "nullable", False) And Not BitAND($iStyle, $DTS_SHOWNONE) Then
+							$iStyle = BitOR($iStyle, $DTS_SHOWNONE)
+						EndIf
+
 						; create control
 						$iCtrlID = GUICtrlCreateDate( _
 							_objGet($aJSONControls[$i], "value"), _
 							$iNextX + $iLabelsWidth + $iMargin, $iNextY, _
 							_objGet($oJSON, "inputsWidth"), $iInputHeight, _
-							_objGet($aJSONControls[$i], "style", $DTS_SHORTDATEFORMAT), _objGet($aJSONControls[$i], "exStyle", -1) _
+							$iStyle, _objGet($aJSONControls[$i], "exStyle", -1) _
 						)
 						_objSet($oControls, _objGet($aJSONControls[$i], "id"), $iCtrlID)
 
@@ -602,12 +632,18 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 						$iInputHeight = __guiUtils_jsonParser_stringSize("A", __guiUtils_jsonParser_getFont($aJSONControls[$i], $aGUIFont), 0)
 						$iInputHeight = $iInputHeight[3] + 4
 
+						; set style
+						$iStyle = _objGet($aJSONControls[$i], "style", $DTS_TIMEFORMAT)
+						If _objGet($aJSONControls[$i], "nullable", False) And Not BitAND($iStyle, $DTS_SHOWNONE) Then
+							$iStyle = BitOR($iStyle, $DTS_SHOWNONE)
+						EndIf
+
 						; create control
 						$iCtrlID = GUICtrlCreateDate( _
 							_objGet($aJSONControls[$i], "value"), _
 							$iNextX + $iLabelsWidth + $iMargin, $iNextY, _
 							_objGet($oJSON, "inputsWidth"), $iInputHeight, _
-							_objGet($aJSONControls[$i], "style", $DTS_TIMEFORMAT), _objGet($aJSONControls[$i], "exStyle", -1) _
+							$iStyle, _objGet($aJSONControls[$i], "exStyle", -1) _
 						)
 						_objSet($oControls, _objGet($aJSONControls[$i], "id"), $iCtrlID)
 
@@ -635,7 +671,7 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 		)
 
 		; check if new column is needed
-		If _objGet($aJSONControls[$i], "type") <> "separator" And $iNextY >= _objGet($oJSON, "maxHeight") Then
+		If _objGet($aJSONControls[$i], "new_col", False) Or (_objGet($aJSONControls[$i], "type") <> "separator" And $iNextY >= _objGet($oJSON, "maxHeight")) Then
 			$iNextY = $iMargin
 			$iNextX = $iNextX + $iMargin + $iLabelsWidth + $iMargin + _objGet($oJSON, "inputsWidth") + $iMargin
 		EndIf
@@ -647,6 +683,12 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 			$iMaxY = _Max($aPos[1] + $aPos[3], $iMaxY)
 			$iCtrlID = 0
 		EndIf
+		If $iLabelID > 0 Then
+			$aPos = ControlGetPos($hGUI, "", $iLabelID)
+			$iMaxX = _Max($aPos[0] + $aPos[2], $iMaxX)
+			$iMaxY = _Max($aPos[1] + $aPos[3], $iMaxY)
+			$iLabelID = 0
+		EndIf
 	Next
 
 	_objSet($oForm, "inputs", $aInputs)
@@ -654,7 +696,10 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	; ---------------------------------------------------------------
 
 	; bottom separator
-	_objSet($oControls, "footerSeparator", GUICtrlCreateLabel("", $iMargin, $iMaxY + $iMargin, $iMaxX - $iMargin, 1, $SS_BLACKRECT))
+	_objSet( _
+		$oControls, "footerSeparator", _
+		GUICtrlCreateLabel("", $iMargin, $iMaxY + $iMargin, $iMaxX - $iMargin, 1, $SS_BLACKRECT) _
+	)
 	$iMaxY += $iMargin + 1
 
 	; submit button (mandatory)
@@ -768,13 +813,13 @@ Func _GUIUtils_CreateFromJSON($vJson, $hParent = Null)
 	Return $oForm
 EndFunc
 
-# ===============================================================================================================================
+# =================================================================================================
 #EndRegion
-# ===============================================================================================================================
+# =================================================================================================
 
-# ===============================================================================================================================
+# =================================================================================================
 #Region - InputBox behaviour
-# ===============================================================================================================================
+# =================================================================================================
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_InputDialog
@@ -811,7 +856,7 @@ EndFunc
 ;                    --------------------------
 ;                    You can set initial data for input controls by passing $oInitialData an object: {controlName: data...}.
 ;                    See _GUIUtils_WriteItems remarks about data format of each control type.
-;                  - You can also set the initially focused input control by specifying "controlName:focus" = True in then
+;                  - You can also set the initially focused input control by specifying "controlName:focus" = True in the
 ;                    initial data object.
 ;
 ;                  - About callback functions:
@@ -833,7 +878,7 @@ EndFunc
 ;                      - $fnOnChange:
 ;                        if set, called every time the content/data of an input control gets changed.
 ;                        $vData is the inputName of the modified control
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnOnSubmit = Null, $fnOnInit = Null, $fnOnChange = Null, $vUserData = Null)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, Null)
@@ -999,13 +1044,13 @@ Func _GUIUtils_InputDialog($oForm, $oInitialData = Null, $fnOnSubmit = Null, $fn
 	Return SetError($iError, 0, $oRead)
 EndFunc
 
-# ===============================================================================================================================
+# =================================================================================================
 #EndRegion
-# ===============================================================================================================================
+# =================================================================================================
 
-# ===============================================================================================================================
+# =================================================================================================
 #Region - MultiGUIRegisterMsg
-# ===============================================================================================================================
+# =================================================================================================
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_RegisterMsg
@@ -1018,7 +1063,7 @@ EndFunc
 ; Return values .: True
 ; Author ........: matwachich
 ; Remarks .......: This function is for when you need to have different message handlers for different forms.
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_RegisterMsg($oForm, $iMsg = Null, $vFunc = Null)
 	; retreive form object
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
@@ -1108,13 +1153,76 @@ Func __guiUtils_registerMsgDispatcher($hWnd, $iMsg, $wParam, $lParam)
 	Return SetError(0, 0, $GUI_RUNDEFMSG)
 EndFunc
 
-# ===============================================================================================================================
+# =================================================================================================
 #EndRegion
-# ===============================================================================================================================
+# =================================================================================================
 
-# ===============================================================================================================================
+# =================================================================================================
+#Region - Controls Subclassing
+# =================================================================================================
+
+; TODO: document
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_SubclassSet
+; Description ...:
+; Syntax ........: _GUIUtils_SubclassSet($oForm, $sCtrlName, $iSubclassID[, $fnSubclassProc = Null])
+; Parameters ....: $oForm               - an object.
+;                  $sCtrlName           - a string value.
+;                  $iSubclassID         - an integer value.
+;                  $fnSubclassProc      - [optional] a floating point value. Default is Null.
+; Return values .: None
+; Author ........: matwachich at gmail dot com
+; Modified ......:
+; Remarks .......:
+; Related .......:
+; Link ..........:
+; Example .......: No
+; =================================================================================================
+Func _GUIUtils_SubclassSet($oForm, $sCtrlName, $iSubclassID, $fnSubclassProc = Null)
+	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
+	If Not IsObj($oForm) Then Return SetError(1, 0, False)
+
+	Local $oSubclasses = _objGet($oForm, "subclasses", Null)
+	If Not _objIsObject($oSubclasses) Then
+		$oSubclasses = _objCreate()
+		_objSet($oForm, "subclasses", $oSubclasses)
+	EndIf
+
+	Local $oCtrlSubclasses = _objGet($oSubclasses, $sCtrlName, Null)
+	If Not _objIsObject($oCtrlSubclasses) Then
+		$oCtrlSubclasses = _objCreate()
+		_objSet($oSubclasses, $sCtrlName, $oCtrlSubclasses)
+	EndIf
+
+	Local $sCallback = _objGet($oCtrlSubclasses, $iSubclassID, "") ; subclassID = funcName:callbackHandle
+	If $sCallback Then
+		Local $hCallback = Int(StringTrimLeft($sCallback, StringInStr($sCallback, ":")))
+		$sCallback = StringLeft($sCallback, StringInStr($sCallback, ":") - 1)
+
+		If FuncName($fnSubclassProc) <> $sCallback Then
+			_WinAPI_RemoveWindowSubclass(_GUIUtils_HCtrl($oForm, $sCtrlName), DllCallbackGetPtr($hCallback), $iSubclassID)
+			DllCallbackFree($hCallback)
+			_objDel($oCtrlSubclasses, $iSubclassID)
+		Else
+			Return ; nothing to do (same function)
+		EndIf
+	EndIf
+
+	If IsFunc($fnSubclassProc) Then
+		$hCallback = DllCallbackRegister($fnSubclassProc, "lresult", "hwnd;uint;wparam;lparam;uint_ptr;dword_ptr")
+		_objSet($oCtrlSubclasses, $iSubclassID, FuncName($fnSubclassProc) & ":" & $hCallback)
+		_WinAPI_SetWindowSubclass(_GUIUtils_HCtrl($oForm, $sCtrlName), DllCallbackGetPtr($hCallback), $iSubclassID)
+	EndIf
+	Return True
+EndFunc
+
+# =================================================================================================
+#EndRegion
+# =================================================================================================
+
+# =================================================================================================
 #Region - FormObject handling
-# ===============================================================================================================================
+# =================================================================================================
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_Destroy
@@ -1124,7 +1232,7 @@ EndFunc
 ; Return values .: Boolean
 ; Author ........: matwachich
 ; Remarks .......: You MUST use this function to destroy a form created with this UDF.
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_Destroy($oForm)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1142,12 +1250,12 @@ EndFunc
 
 ; #FUNCTION# ====================================================================================================================
 ; Name ..........: _GUIUtils_ListForms
-; Description ...: Returns the global Scripting.Dictionary containing hWnd:oFormObject pairs.
+; Description ...: Returns the global Scripting.Dictionary containing HWnd:oFormObject pairs.
 ; Syntax ........: _GUIUtils_ListForms()
 ; Parameters ....: None
-; Return values .: Object
+; Return values .: Object { HWnd (as string): formObject, ... }
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_ListForms()
 	Return $__gGuiUtils_oForms
 EndFunc
@@ -1163,7 +1271,7 @@ EndFunc
 ; Remarks .......: $vAccels array format: $array[][] = [["hotkey", "controlName"], ...]
 ;                  When first setting accelerators array, it is saved in $oForm objet.
 ;                  Later on, you can just set $vAccels to True or False to activate or deactivate accelerators.
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_SetAccels($oForm, $vAccels)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1190,7 +1298,7 @@ EndFunc
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA).
 ; Return values .: HWnd
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_HWnd($oForm)
 	If IsHWnd($oForm) Then Return $oForm
 
@@ -1204,7 +1312,7 @@ EndFunc
 ; Parameters ....: $oForm               - GUI handle.
 ; Return values .: Form Object
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_FormObject($oForm)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	Return $oForm
@@ -1217,7 +1325,7 @@ EndFunc
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA).
 ; Return values .: Form name
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_FormName($oForm)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, "")
@@ -1242,7 +1350,7 @@ EndFunc
 ; Remarks .......: This function is usefull to add custom (UDF for example) controls to a $oForm.
 ;                  Dont worry about passing a CtrlID or HCtrl, both are handled correctly, and you will be able to normaly use
 ;                  _GUIUtils_CtrlID and _GUIUtils_HCtrl.
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_CtrlSet($oForm, $sCtrlName, $iCtrlID_or_hCtrl, $bOverwrite = True, $bDeleteIfExists = True)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1271,7 +1379,7 @@ EndFunc
 ;                  $sCtrlName           - control name.
 ; Return values .: ControlID, or -1 if not found or error
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_CtrlID($oForm, $sCtrlName)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, -1)
@@ -1289,7 +1397,7 @@ EndFunc
 ;                  $iCtrlID             - control ID.
 ; Return values .: Control name or empty string if not found or error
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_CtrlNameByID($oForm, $iCtrlID)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, "")
@@ -1311,7 +1419,7 @@ EndFunc
 ;                  $sCtrlName           - control name.
 ; Return values .: Control handle or 0 if not found or error
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_HCtrl($oForm, $sCtrlName)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, 0)
@@ -1332,7 +1440,7 @@ EndFunc
 ;                  $hCtrl               - control handle.
 ; Return values .: Control name or empty string if not found or error
 ; Author ........: matwahich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_CtrlNameByHandle($oForm, $hCtrl)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, "")
@@ -1353,7 +1461,7 @@ EndFunc
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
 ; Return values .: Object {controlName: controlID, ...}
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_CtrlList($oForm)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, Null)
@@ -1371,7 +1479,7 @@ EndFunc
 ; Author ........: matwachich
 ; Remarks .......: Only forms created by _GUIUtils_CreateFromKODA will have children controls set for some kind of controls.
 ;                  These kind of controls (who have children) are: group, controlGroup, tab, and tabSheet
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_CtrlChildren($oForm, $sCtrlName)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, Null)
@@ -1399,7 +1507,7 @@ EndFunc
 ;                  $bOverwrite          - [optional] overwrite existing value. Default is True.
 ; Return values .: None
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_UserDataSet($oForm, $sItemName, $vValue, $bOverwrite = True)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1422,7 +1530,7 @@ EndFunc
 ;                  $vDefaultValue       - [optional] the value to return if $sItemName doesn't exists. Default is Null.
 ; Return values .: The value $sItemName or $vDefaultValue
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_UserDataGet($oForm, $sItemName, $vDefaultValue = Null)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, $vDefaultValue)
@@ -1441,7 +1549,7 @@ EndFunc
 ;                  $sItemName           - value name.
 ; Return values .: True/False
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_UserDataExists($oForm, $sItemName)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1457,7 +1565,7 @@ EndFunc
 ;                  $sItemName           - value name.
 ; Return values .: None
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_UserDataDel($oForm, $sItemName)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1472,7 +1580,7 @@ EndFunc
 ; Parameters ....: $oForm               - GUI object (as returned by _GUIUtils_CreateFromKODA or _GUIUtils_CreateFromJSON).
 ; Return values .: None
 ; Author ........: matwachich
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_UserDataEmpty($oForm)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1491,7 +1599,7 @@ EndFunc
 ; Author ........: matwachich
 ; Remarks .......: By default, all named Inputs, Edits, Combo, List, Checkbox, Radiobox and DateTimePicker will be considered as
 ;                  input controls.
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_SetInputs($oForm, $vInputs)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1511,7 +1619,7 @@ EndFunc
 ; Author ........: matwachich
 ; Remarks .......: If an input list was previously set by _GUIUtils_SetInputs, then this list is returned.
 ;                  If not, all supported input names are returned.
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_GetInputs($oForm)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, Null)
@@ -1536,7 +1644,7 @@ EndFunc
 ; Return values .: None
 ; Author ........: matwachich
 ; Remarks .......: See remarks in _GUIUtils_InputDialog for default behaviour if buttons are not set.
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_SetButtons($oForm, $sBtnSubmit, $sBtnCancel = Default)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
@@ -1555,7 +1663,7 @@ EndFunc
 ; Author ........: matwachich
 ; Remarks .......: Input controls are: Inputs, Edits, Combo, List, Checkbox, Radiobox and DateTimePicker.
 ;                  See _GUIUtils_WriteInputs for data format
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_ReadInputs($oForm, $sCtrlName = "")
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, Null)
@@ -1605,16 +1713,24 @@ EndFunc
 ;                  Control Focus:
 ;                  --------------
 ;                  You can set controlName:focus in order to set input focus to controlName
-; ===============================================================================================================================
+; =================================================================================================
 Func _GUIUtils_WriteInputs($oForm, $vCtrlNameOrDataObj = Null, $vData = Null, $vOptions = Null)
 	If IsHWnd($oForm) Then $oForm = _objGet($__gGuiUtils_oForms, $oForm, Null)
 	If Not IsObj($oForm) Then Return SetError(1, 0, False)
 
+	If $vCtrlNameOrDataObj = Null Then
+		; reset all inputs
+		For $sInput In _GUIUtils_GetInputs($oForm)
+			__guiUtils_inputDialog_controlSet($oForm, $sInput)
+		Next
+		Return
+	EndIf
+
 	If IsString($vCtrlNameOrDataObj) And $vCtrlNameOrDataObj Then
 		__guiUtils_inputDialog_controlSet($oForm, $vCtrlNameOrDataObj, $vData, $vOptions)
 	ElseIf IsObj($vCtrlNameOrDataObj) Then
-		For $sKey In _objKeys($vCtrlNameOrDataObj)
-			If Not StringInStr($sKey, ":") Then
+		For $sKey In _GUIUtils_CtrlList($oForm)
+			If _objExists($vCtrlNameOrDataObj, $sKey) Then
 				__guiUtils_inputDialog_controlSet($oForm, $sKey, _
 					_objGet($vCtrlNameOrDataObj, $sKey, Null), _
 					_objGet($vCtrlNameOrDataObj, $sKey & ":options", Null) _
@@ -1622,16 +1738,58 @@ Func _GUIUtils_WriteInputs($oForm, $vCtrlNameOrDataObj = Null, $vData = Null, $v
 				If _objGet($vCtrlNameOrDataObj, $sKey & ":focus", False) Then ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, $sKey))
 			EndIf
 		Next
+
+;~ 		For $sKey In _objKeys($vCtrlNameOrDataObj)
+;~ 			If Not StringInStr($sKey, ":") Then
+;~ 				__guiUtils_inputDialog_controlSet($oForm, $sKey, _
+;~ 					_objGet($vCtrlNameOrDataObj, $sKey, Null), _
+;~ 					_objGet($vCtrlNameOrDataObj, $sKey & ":options", Null) _
+;~ 				)
+;~ 				If _objGet($vCtrlNameOrDataObj, $sKey & ":focus", False) Then ControlFocus(_GUIUtils_HWnd($oForm), "", _GUIUtils_CtrlID($oForm, $sKey))
+;~ 			EndIf
+;~ 		Next
 	EndIf
 EndFunc
 
-# ===============================================================================================================================
-#EndRegion
-# ===============================================================================================================================
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_SetCustomInputsReader
+; Description ...: Set a function that will be called when attemptin to read from a non standard input.
+; Syntax ........: _GUIUtils_SetCustomInputsReader([$fnReader = Null])
+; Parameters ....: $fnReader            - Reader function (see remarks). Default is Null (no custom reader).
+; Return values .: Old reader function.
+; Author ........: matwachich at gmail dot com
+; Remarks .......: Reader prototype: $fnReader($oForm, $sCtrlName, $sCtrlClass)
+; Related .......: _GUIUtils_ReadInputs
+; ===============================================================================================================================
+Func _GUIUtils_SetCustomInputsReader($fnReader = Null)
+	Local $oldFunc = $__gGuiUtils_fnCustomInputReader
+	$__gGuiUtils_fnCustomInputReader = $fnReader
+	Return $oldFunc
+EndFunc
 
-# ===============================================================================================================================
+; #FUNCTION# ====================================================================================================================
+; Name ..........: _GUIUtils_SetCustomInputsWriter
+; Description ...: Set a function that will be called when attempting to write to a non standard input.
+; Syntax ........: _GUIUtils_SetCustomInputsWriter([$fnWriter = Null])
+; Parameters ....: $fnWriter            - Writer function (see remarks). Default is Null (no custom writer).
+; Return values .: Old writer function.
+; Author ........: matwachich at gmail dot com
+; Remarks .......: Writer prototype: $fnWriter($oForm, $sCtrlName, $sCtrlClass, $vData, $vOptions)
+; Related .......: _GUIUtils_WriteInputs
+; ===============================================================================================================================
+Func _GUIUtils_SetCustomInputsWriter($fnWriter = Null)
+	Local $oldFunc = $__gGuiUtils_fnCustomInputWriter
+	$__gGuiUtils_fnCustomInputWriter = $fnWriter
+	Return $oldFunc
+EndFunc
+
+# =================================================================================================
+#EndRegion
+# =================================================================================================
+
+# =================================================================================================
 #Region - Misc
-# ===============================================================================================================================
+# =================================================================================================
 
 Func _GUIUtils_GetFont($oForm, $bAsString = False)
 	$oForm = __guiUtils_getFormHandleOrObject($oForm, True)
@@ -1665,36 +1823,33 @@ Func _GUIUtils_GetFont($oForm, $bAsString = False)
 	Return $bAsString ? _ArrayToString($aRet, ",") : $aRet
 EndFunc
 
-# ===============================================================================================================================
+# =================================================================================================
 #EndRegion
-# ===============================================================================================================================
+# =================================================================================================
 
-# ===============================================================================================================================
+# =================================================================================================
 #Region - Internal functions
-# ===============================================================================================================================
+# =================================================================================================
 
 #... STOP DBUG
 
 Func __guiUtils_getFormHandleOrObject($vForm, $bAsHWnd = False)
-;~ 	Select
-;~ 		Case IsHWnd($vForm)
-;~ 			If $bAsHWnd Then
-;~ 				Return $vForm
-;~ 			Else
-;~ 				Return _objGet($__gGuiUtils_oForms, $vForm, $vForm)
-;~ 			EndIf
-;~ 		Case IsObj($vForm)
-;~ 			If $bAsHWnd Then
-;~ 				Return _GUIUtils_HWnd($vForm)
-;~ 			Else
-;~ 				Return $vForm
-;~ 			EndIf
-;~ 		Case Else
-;~ 			Return $vForm
-;~ 	EndSelect
-	If $bAsHWnd And Not IsHWnd($vForm) Then $vForm = _objGet($__gGuiUtils_oForms, $vForm, $vForm)
-	If $bAsHWnd And IsObj($vForm) Then $vFont = _GUIUtils_HWnd($vForm)
-	Return $vForm
+	Select
+		Case IsHWnd($vForm)
+			If $bAsHWnd Then
+				Return $vForm
+			Else
+				Return _objGet($__gGuiUtils_oForms, $vForm, $vForm)
+			EndIf
+		Case IsObj($vForm)
+			If $bAsHWnd Then
+				Return _GUIUtils_HWnd($vForm)
+			Else
+				Return $vForm
+			EndIf
+		Case Else
+			Return $vForm
+	EndSelect
 EndFunc
 
 ; returns all *named* and *supported* controls in $oForm
@@ -2151,8 +2306,8 @@ Func __guiUtils_kodaParser_createControls($oForm, $oObjects, $iXOffset = 0, $iYO
 				If $bIsFirstCall Then __guiUtils_kodaParser_calculateGUIsize($oForm, $oProperties)
 				$bIsStandardCtrl = False
 			; ---
-			Case "TAToolBar"
-				$bIsStandardCtrl = False
+;~ 			Case "TAToolBar"
+;~ 				$bIsStandardCtrl = False
 ;~ 			Case "TAImageList"
 ;~ 				$bIsStandardCtrl = False
 			Case Else
@@ -2565,8 +2720,9 @@ Func __guiUtils_inputDialog_subClassProc($hWnd, $iMsg, $wParam, $lParam, $iID, $
 EndFunc
 
 Func __guiUtils_inputDialog_controlGet($oForm, $sCtrlName)
-	Switch __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
-		Case "Input", "Edit", "Combobox"
+	Local $sCtrlClass = __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
+	Switch $sCtrlClass
+		Case "Static", "Input", "Edit", "Combobox"
 			Return GUICtrlRead(_GUIUtils_CtrlID($oForm, $sCtrlName))
 
 		Case "Listbox"
@@ -2587,21 +2743,25 @@ Func __guiUtils_inputDialog_controlGet($oForm, $sCtrlName)
 			Local $oOptions = _objGet($oForm, "options", Null)
 
 			Local $tST = _GUICtrlDTP_GetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName))
-			Return @error ? Null : _WinAPI_GetDateFormat(0, $tST, 0, _objGet($oOptions, $sCtrlName & "_format", "yyyy/MM/dd"))
+			Return @error ? "" : _WinAPI_GetDateFormat(0, $tST, 0, _objGet($oOptions, $sCtrlName & "_format", "yyyy/MM/dd"))
 
 		Case "Time"
 			Local $oOptions = _objGet($oForm, "options", Null)
 
 			Local $tST = _GUICtrlDTP_GetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName))
-			Return @error ? Null : _WinAPI_GetTimeFormat(0, $tST, 0, _objGet($oOptions, $sCtrlName & "_format"))
+			Return @error ? "" : _WinAPI_GetTimeFormat(0, $tST, 0, _objGet($oOptions, $sCtrlName & "_format")) ;TODO: faudrait pas mettre le format ici???
 
+		Case Else
+			If IsFunc($__gGuiUtils_fnCustomInputReader) Then _
+				Return $__gGuiUtils_fnCustomInputReader($oForm, $sCtrlName, $sCtrlClass)
 	EndSwitch
 	Return ""
 EndFunc
 
 Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOptions = Null)
-	Switch __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
-		Case "Edit", "Input"
+	Local $sCtrlClass = __guiUtils_identifyControl(_GUIUtils_HCtrl($oForm, $sCtrlName))
+	Switch $sCtrlClass
+		Case "Static", "Edit", "Input"
 			GUICtrlSetData(_GUIUtils_CtrlID($oForm, $sCtrlName), $vData <> Null ? String($vData) : "")
 
 		Case "Checkbox", "Radio"
@@ -2701,9 +2861,12 @@ Func __guiUtils_inputDialog_controlSet($oForm, $sCtrlName, $vData = Null, $vOpti
 			EndIf
 			_GUICtrlDTP_SetSystemTimeEx(_GUIUtils_HCtrl($oForm, $sCtrlName), $tST, $vData = Null)
 
+		Case Else
+			If IsFunc($__gGuiUtils_fnCustomInputWriter) Then _
+				$__gGuiUtils_fnCustomInputWriter($oForm, $sCtrlName, $sCtrlClass, $vData, $vOptions)
 	EndSwitch
 EndFunc
 
-# ===============================================================================================================================
+# =================================================================================================
 #EndRegion
-# ===============================================================================================================================
+# =================================================================================================
